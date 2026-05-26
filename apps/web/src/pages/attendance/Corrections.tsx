@@ -23,7 +23,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { recomputeAttendanceDaily } from '@/lib/attendance'
 
 type Correction = {
   id: string
@@ -165,50 +164,15 @@ export function CorrectionsPage() {
   const decide = async () => {
     if (!decision || !appUser) return
     setBusy(true)
-    const target = rows.find((r) => r.id === decision.id)
-    const { error } = await supabase
-      .from('attendance_corrections')
-      .update({
-        status: decision.status,
-        decision_note: decision.note.trim() || null,
-        decided_at: new Date().toISOString(),
-        approver_id: appUser.id,
-      })
-      .eq('id', decision.id)
+    const { error } = await supabase.rpc('approve_attendance_correction', {
+      p_correction_id: decision.id,
+      p_status: decision.status,
+      p_decision_note: decision.note.trim() || null,
+    })
     if (error) {
       setBusy(false)
       toast.error('Decision failed', { description: error.message })
       return
-    }
-
-    if (decision.status === 'Approved' && target) {
-      if (target.proposed_in) {
-        await supabase.from('attendance_punches').insert({
-          company_id: appUser.company_id,
-          employee_id: target.employee_id,
-          punch_at: target.proposed_in,
-          punch_type: 'in',
-          source: 'manual',
-          notes: `Correction approved: ${target.reason}`.slice(0, 500),
-          created_by: appUser.id,
-        })
-      }
-      if (target.proposed_out) {
-        await supabase.from('attendance_punches').insert({
-          company_id: appUser.company_id,
-          employee_id: target.employee_id,
-          punch_at: target.proposed_out,
-          punch_type: 'out',
-          source: 'manual',
-          notes: `Correction approved: ${target.reason}`.slice(0, 500),
-          created_by: appUser.id,
-        })
-      }
-      try {
-        await recomputeAttendanceDaily(appUser.company_id, target.attendance_date)
-      } catch (err) {
-        console.warn('Recompute after correction approve failed', err)
-      }
     }
 
     await writeAuditLog({
@@ -219,7 +183,11 @@ export function CorrectionsPage() {
     })
     setBusy(false)
     setDecision(null)
-    toast.success(`Correction ${decision.status.toLowerCase()}`)
+    toast.success(
+      decision.status === 'Approved'
+        ? 'Correction approved — attendance updated for that day'
+        : `Correction ${decision.status.toLowerCase()}`
+    )
     void load()
   }
 

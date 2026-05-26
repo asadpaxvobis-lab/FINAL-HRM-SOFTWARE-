@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 import { ShiftAssignmentTab } from '@/components/employee/ShiftAssignmentTab'
 import { CompensationTab } from '@/components/employee/CompensationTab'
 import { DocumentsTab } from '@/components/employee/DocumentsTab'
+import { BankTab } from '@/components/employee/BankTab'
 
 type Statutory = {
   id?: string
@@ -48,7 +49,7 @@ export function EmployeeDetailPage() {
   const { hasPermission } = useAuth()
   const canUpdate = hasPermission('employee.update')
   const canDelete = hasPermission('employee.delete')
-  type Tab = 'profile' | 'statutory' | 'shifts' | 'compensation' | 'documents'
+  type Tab = 'profile' | 'statutory' | 'shifts' | 'compensation' | 'bank' | 'documents'
   const [tab, setTab] = useState<Tab>('profile')
   const [loading, setLoading] = useState(true)
   const [employee, setEmployee] = useState<Record<string, unknown> | null>(null)
@@ -223,6 +224,7 @@ export function EmployeeDetailPage() {
           ['statutory', 'Statutory'],
           ['shifts', 'Shifts'],
           ['compensation', 'Compensation'],
+          ['bank', 'Bank'],
           ['documents', 'Documents'],
         ] as [Tab, string][]).map(([t, label]) => (
           <button
@@ -394,6 +396,7 @@ export function EmployeeDetailPage() {
 
       {tab === 'shifts' && id && <ShiftAssignmentTab employeeId={id} />}
       {tab === 'compensation' && id && <CompensationTab employeeId={id} />}
+      {tab === 'bank' && id && <BankTab employeeId={id} employeeName={fullName} />}
       {tab === 'documents' && id && <DocumentsTab employeeId={id} />}
     </div>
   )

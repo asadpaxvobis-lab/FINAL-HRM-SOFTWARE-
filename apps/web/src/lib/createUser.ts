@@ -7,24 +7,15 @@ export async function createUserViaAdmin(params: {
   phone?: string
   role_ids: string[]
 }): Promise<{ user_id?: string; error?: string }> {
-  const { data: session } = await supabase.auth.getSession()
-  const token = session.session?.access_token
-  if (!token) return { error: 'Not signed in' }
-
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-    },
-    body: JSON.stringify(params),
+  const { data, error } = await supabase.rpc('admin_create_user', {
+    p_email: params.email.trim(),
+    p_password: params.password,
+    p_full_name: params.full_name?.trim() || null,
+    p_phone: params.phone?.trim() || null,
+    p_role_ids: params.role_ids.length > 0 ? params.role_ids : [],
   })
 
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    return { error: json.error ?? `HTTP ${res.status}` }
-  }
-  return { user_id: json.user_id }
+  if (error) return { error: error.message }
+  if (!data) return { error: 'User was not created' }
+  return { user_id: data as string }
 }

@@ -74,7 +74,7 @@ export function HolidaysPage() {
     const [h, b] = await Promise.all([
       supabase
         .from('holidays')
-        .select('id, name, holiday_date, holiday_type, description, branch_id, is_paid, is_active, branches(name)')
+        .select('id, name, holiday_date, holiday_type, description, branch_id, is_paid, is_active, branches!branch_id(name)')
         .gte('holiday_date', start)
         .lte('holiday_date', end)
         .order('holiday_date'),

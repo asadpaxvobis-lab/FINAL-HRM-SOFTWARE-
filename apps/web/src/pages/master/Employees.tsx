@@ -65,6 +65,7 @@ const emptyForm = {
   department_id: '',
   designation_id: '',
   reports_to_id: '',
+  device_pin: '',
   is_active: true,
 }
 
@@ -315,6 +316,7 @@ export function EmployeesPage() {
       department_id: e.department_id ?? '',
       designation_id: e.designation_id ?? '',
       reports_to_id: row.reports_to_id ? String(row.reports_to_id) : '',
+      device_pin: row.device_pin != null ? String(row.device_pin) : '',
       is_active: e.is_active,
     })
 
@@ -377,6 +379,7 @@ export function EmployeesPage() {
       department_id: form.department_id,
       designation_id: form.designation_id,
       reports_to_id: form.reports_to_id || null,
+      device_pin: form.device_pin.trim() ? parseInt(form.device_pin, 10) : null,
       is_active: form.is_active,
     }
 
@@ -936,6 +939,18 @@ export function EmployeesPage() {
                     className={requiredInputClass}
                   />
                 </RequiredField>
+                <div className="space-y-2">
+                  <Label>Device PIN (ZKTeco)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.device_pin}
+                    onChange={(e) => setForm({ ...form, device_pin: e.target.value })}
+                    placeholder="Biometric user ID on device"
+                    className="font-mono"
+                  />
+                  <p className="text-xs text-muted-foreground">Must match the PIN enrolled on attendance devices.</p>
+                </div>
                 <div className="space-y-2">
                   <Label>Reports to</Label>
                   <Select value={form.reports_to_id} onChange={(e) => setForm({ ...form, reports_to_id: e.target.value })}>

@@ -18,6 +18,7 @@ import {
   FileText,
   BarChart3,
   LogOut,
+  UserSearch,
   Shield,
   Settings as SettingsIcon,
   ClipboardList,
@@ -110,6 +111,14 @@ const quickActions: { heading: string; items: QuickAction[] }[] = [
     ],
   },
   {
+    heading: 'Recruitment',
+    items: [
+      { label: 'Recruitment hub', description: 'Jobs, pipeline, interviews, hire', to: '/recruitment', icon: UserSearch, perm: 'recruitment.view', tone: 'blue' },
+      { label: 'Job postings', description: 'Open roles and requirements', to: '/recruitment/jobs', icon: Briefcase, perm: 'recruitment.view', tone: 'cyan' },
+      { label: 'Candidate pipeline', description: 'Applied → screening → interview → offer', to: '/recruitment/pipeline', icon: Users, perm: 'recruitment.view', tone: 'purple' },
+    ],
+  },
+  {
     heading: 'Reports',
     items: [
       { label: 'Reports', description: 'Muster roll, salary register, statutory', to: '/reports', icon: BarChart3, perm: 'report.view', tone: 'purple' },
@@ -141,7 +150,13 @@ export function DashboardPage() {
     pendingCorrections: '—' as number | string,
     upcomingHolidays: '—' as number | string,
     activeDevices: '—' as number | string,
+    presentToday: '—' as number | string,
+    lateToday: '—' as number | string,
+    absentToday: '—' as number | string,
   })
+  const [livePunches, setLivePunches] = useState<
+    { id: string; name: string; code: string; punch_at: string; source: string }[]
+  >([])
   const [onLeaveList, setOnLeaveList] = useState<{ id: string; name: string; type: string; until: string }[]>([])
   const [upcomingHolidays, setUpcomingHolidays] = useState<{ id: string; name: string; date: string }[]>([])
   const [announcements, setAnnouncements] = useState<
@@ -157,13 +172,17 @@ export function DashboardPage() {
 
   useEffect(() => {
     const load = async () => {
-      const [emp, br, dep, desg, us, dev, hol, holList, leaveToday, pendLeave, pendCorr] = await Promise.all([
+      const attendanceDailyQuery = hasPermission('attendance.view')
+        ? supabase.from('attendance_daily').select('status').eq('attendance_date', todayIso)
+        : Promise.resolve({ data: [] as { status: string }[] })
+
+      const [emp, br, dep, desg, us, dev, hol, holList, leaveToday, pendLeave, pendCorr, dailyRows] = await Promise.all([
         supabase.from('employees').select('*', { count: 'exact', head: true }),
         supabase.from('branches').select('*', { count: 'exact', head: true }),
         supabase.from('departments').select('*', { count: 'exact', head: true }),
         supabase.from('designations').select('*', { count: 'exact', head: true }),
         supabase.from('users').select('*', { count: 'exact', head: true }),
-        supabase.from('attendance_devices').select('*', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('attendance_devices').select('*', { count: 'exact', head: true }).eq('is_active', true),
         supabase
           .from('holidays')
           .select('*', { count: 'exact', head: true })
@@ -191,7 +210,13 @@ export function DashboardPage() {
           .from('attendance_corrections')
           .select('*', { count: 'exact', head: true })
           .eq('status', 'PENDING'),
+        attendanceDailyQuery,
       ])
+
+      const daily = (dailyRows.data ?? []) as { status: string }[]
+      const presentCount = daily.filter((d) => d.status === 'Present' || d.status === 'Late').length
+      const lateCount = daily.filter((d) => d.status === 'Late').length
+      const absentCount = daily.filter((d) => d.status === 'Absent').length
 
       setStats({
         employees: emp.count ?? 0,
@@ -204,6 +229,9 @@ export function DashboardPage() {
         onLeaveToday: leaveToday.data?.length ?? 0,
         pendingLeave: pendLeave.count ?? 0,
         pendingCorrections: pendCorr.count ?? 0,
+        presentToday: hasPermission('attendance.view') ? presentCount : '—',
+        lateToday: hasPermission('attendance.view') ? lateCount : '—',
+        absentToday: hasPermission('attendance.view') ? absentCount : '—',
       })
 
       setOnLeaveList(
@@ -249,6 +277,63 @@ export function DashboardPage() {
     void load().catch(() => {})
   }, [todayIso, in30Iso, appUser?.id, hasPermission])
 
+  const loadLivePunches = async () => {
+    if (!hasPermission('attendance.view')) return
+    const { data } = await supabase
+      .from('attendance_punches')
+      .select('id, punch_at, source, employees ( full_name, employee_code )')
+      .gte('punch_at', `${todayIso}T00:00:00`)
+      .order('punch_at', { ascending: false })
+      .limit(12)
+    setLivePunches(
+      (data ?? []).map((r: Record<string, unknown>) => {
+        const emp = r.employees as { full_name?: string; employee_code?: string } | { full_name?: string; employee_code?: string }[] | null
+        const e = Array.isArray(emp) ? emp[0] : emp
+        return {
+          id: r.id as string,
+          name: e?.full_name ?? 'Employee',
+          code: e?.employee_code ?? '',
+          punch_at: r.punch_at as string,
+          source: r.source as string,
+        }
+      })
+    )
+  }
+
+  useEffect(() => {
+    if (!hasPermission('attendance.view')) return
+    void loadLivePunches()
+
+    const channel = supabase
+      .channel('dashboard-attendance-live')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'attendance_punches' },
+        () => {
+          void loadLivePunches()
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'attendance_daily', filter: `attendance_date=eq.${todayIso}` },
+        async () => {
+          const { data } = await supabase.from('attendance_daily').select('status').eq('attendance_date', todayIso)
+          const daily = (data ?? []) as { status: string }[]
+          setStats((s) => ({
+            ...s,
+            presentToday: daily.filter((d) => d.status === 'Present' || d.status === 'Late').length,
+            lateToday: daily.filter((d) => d.status === 'Late').length,
+            absentToday: daily.filter((d) => d.status === 'Absent').length,
+          }))
+        }
+      )
+      .subscribe()
+
+    return () => {
+      void supabase.removeChannel(channel)
+    }
+  }, [todayIso, hasPermission])
+
   const statTiles: Stat[] = [
     { label: 'Employees', value: stats.employees, icon: Users, hint: 'Total in system', to: '/employees', perm: 'employee.view' },
     { label: 'Departments', value: stats.departments, icon: Briefcase, hint: 'Configured', to: '/departments', perm: 'department.view' },
@@ -257,6 +342,9 @@ export function DashboardPage() {
     { label: 'On leave today', value: stats.onLeaveToday, icon: CalendarDays, hint: 'Approved leave', to: '/leave', perm: 'leave.view' },
     { label: 'Pending leave', value: stats.pendingLeave, icon: CalendarDays, hint: 'Awaiting decision', to: '/leave', perm: 'leave.approve' },
     { label: 'Pending corrections', value: stats.pendingCorrections, icon: FileQuestion, hint: 'Attendance fixes', to: '/attendance/corrections', perm: 'attendance.view' },
+    { label: 'Present today', value: stats.presentToday, icon: Clock, hint: 'Checked in', to: '/attendance', perm: 'attendance.view' },
+    { label: 'Late today', value: stats.lateToday, icon: Clock, hint: 'After grace period', to: '/attendance', perm: 'attendance.view' },
+    { label: 'Absent today', value: stats.absentToday, icon: Clock, hint: 'No punch yet', to: '/attendance', perm: 'attendance.view' },
     { label: 'Upcoming holidays', value: stats.upcomingHolidays, icon: CalendarRange, hint: 'Next 30 days', to: '/holidays', perm: 'holiday.view' },
   ]
 
@@ -314,6 +402,45 @@ export function DashboardPage() {
           )
         })}
       </div>
+
+      {/* Live attendance feed */}
+      {hasPermission('attendance.view') && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Clock className="h-4 w-4 text-primary" /> Live punches today
+              </CardTitle>
+              <CardDescription>Updates automatically when devices or manual punches record attendance.</CardDescription>
+            </div>
+            <Link to="/attendance" className="text-xs text-primary hover:underline">
+              Open attendance →
+            </Link>
+          </CardHeader>
+          <CardContent className="p-0">
+            {livePunches.length === 0 ? (
+              <div className="px-6 py-8 text-sm text-muted-foreground">No punches recorded yet today.</div>
+            ) : (
+              <div className="divide-y">
+                {livePunches.map((p) => (
+                  <div key={p.id} className="flex items-center justify-between gap-3 px-6 py-3 text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{p.name}</div>
+                      <div className="text-xs text-muted-foreground">{p.code}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="tabular-nums">
+                        {new Date(p.punch_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{p.source.replace('_', ' ')}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Announcements feed */}
       {hasPermission('announcement.view') && announcements.length > 0 && (

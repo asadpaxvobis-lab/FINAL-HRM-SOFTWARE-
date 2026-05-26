@@ -286,67 +286,34 @@ function CreateUserDialog({
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!appUser) return
+    if (selectedRoles.size === 0) {
+      toast.error('Select at least one role')
+      return
+    }
     setBusy(true)
-
-    const roleIds = Array.from(selectedRoles)
-    const edgeResult = await createUserViaAdmin({
-      email,
-      password: tempPassword,
-      full_name: fullName,
-      phone,
-      role_ids: roleIds,
-    })
-
-    let newId = edgeResult.user_id
-
-    if (edgeResult.error) {
-      // Fallback: signUp (may require email confirmation unless disabled in Supabase Auth settings)
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+    try {
+      const roleIds = Array.from(selectedRoles)
+      const result = await createUserViaAdmin({
         email,
         password: tempPassword,
-        options: { data: { full_name: fullName, created_by_admin: true } },
+        full_name: fullName,
+        phone,
+        role_ids: roleIds,
       })
-      if (signUpError) {
-        setBusy(false)
-        toast.error('Could not create user', {
-          description: `${edgeResult.error}. Fallback: ${signUpError.message}`,
-        })
-        return
-      }
-      newId = signUpData.user?.id
-      if (!newId) {
-        setBusy(false)
-        toast.error('User pending email confirmation — check Supabase Auth settings or deploy create-user Edge Function.')
-        return
-      }
-      const { error: pubErr } = await supabase.from('users').insert({
-        id: newId,
-        company_id: appUser.company_id,
-        email,
-        full_name: fullName || null,
-        phone: phone || null,
-        status: 'Active',
-        force_password_change: true,
-        created_by: appUser.id,
-      })
-      if (pubErr) {
-        setBusy(false)
-        toast.error('Profile insert failed', { description: pubErr.message })
-        return
-      }
-      if (roleIds.length > 0) {
-        await supabase.from('user_roles').insert(
-          roleIds.map((rid) => ({ user_id: newId!, role_id: rid, assigned_by: appUser.id }))
-        )
-      }
-    }
 
-    await writeAuditLog({ action: 'CREATE', entityType: 'user', entityId: newId })
-    setBusy(false)
-    toast.success('User created', { description: `${email} can sign in with the temporary password.` })
-    reset()
-    onOpenChange(false)
-    onCreated()
+      if (result.error || !result.user_id) {
+        toast.error('Could not create user', { description: result.error ?? 'Unknown error' })
+        return
+      }
+
+      await writeAuditLog({ action: 'CREATE', entityType: 'user', entityId: result.user_id })
+      toast.success('User created', { description: `${email.trim()} can sign in with the temporary password.` })
+      reset()
+      onOpenChange(false)
+      onCreated()
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (

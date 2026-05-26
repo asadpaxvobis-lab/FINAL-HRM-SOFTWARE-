@@ -23,11 +23,16 @@ type Period = {
 
 type Row = {
   id: string
+  employee_id: string
   employee_code: string
   employee_name: string
   department: string | null
   net_pay: number | null
   status: string
+  bank_name: string | null
+  account_number: string | null
+  iban: string | null
+  account_title: string | null
 }
 
 export function BankDisbursementPage() {
@@ -55,11 +60,45 @@ export function BankDisbursementPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('payslips')
-      .select('id, employee_code, employee_name, department, net_pay, status')
+      .select('id, employee_id, employee_code, employee_name, department, net_pay, status')
       .eq('period_id', periodId)
       .order('employee_code')
-    if (error) toast.error('Failed to load', { description: error.message })
-    setRows((data ?? []) as Row[])
+    if (error) {
+      toast.error('Failed to load', { description: error.message })
+      setLoading(false)
+      return
+    }
+    const slips = (data ?? []) as Omit<Row, 'bank_name' | 'account_number' | 'iban' | 'account_title'>[]
+    const empIds = [...new Set(slips.map((s) => s.employee_id))]
+    let bankMap = new Map<string, { bank_name: string; account_number: string; iban: string | null; account_title: string }>()
+    if (empIds.length > 0) {
+      const { data: banks } = await supabase
+        .from('employee_bank_accounts')
+        .select('employee_id, bank_name, account_number, iban, account_title')
+        .in('employee_id', empIds)
+        .eq('is_primary', true)
+        .eq('is_active', true)
+      for (const b of banks ?? []) {
+        bankMap.set(b.employee_id, {
+          bank_name: b.bank_name,
+          account_number: b.account_number,
+          iban: b.iban,
+          account_title: b.account_title,
+        })
+      }
+    }
+    setRows(
+      slips.map((s) => {
+        const bank = bankMap.get(s.employee_id)
+        return {
+          ...s,
+          bank_name: bank?.bank_name ?? null,
+          account_number: bank?.account_number ?? null,
+          iban: bank?.iban ?? null,
+          account_title: bank?.account_title ?? null,
+        }
+      })
+    )
     setLoading(false)
   }
 
@@ -69,13 +108,17 @@ export function BankDisbursementPage() {
 
   const period = periods.find((p) => p.id === periodId)
   const total = useMemo(() => rows.reduce((a, r) => a + Number(r.net_pay ?? 0), 0), [rows])
+  const missingBank = useMemo(() => rows.filter((r) => !r.iban && !r.account_number).length, [rows])
 
   function exportCsv() {
     const csv = toCsv(
       rows.map((r, i) => ({
         sr_no: i + 1,
         employee_code: r.employee_code,
-        beneficiary_name: r.employee_name,
+        beneficiary_name: r.account_title || r.employee_name,
+        bank_name: r.bank_name ?? '',
+        account_number: r.account_number ?? '',
+        iban: r.iban ?? '',
         department: r.department ?? '',
         amount: Number(r.net_pay ?? 0).toFixed(2),
         currency: 'PKR',
@@ -118,6 +161,13 @@ export function BankDisbursementPage() {
         </div>
       )}
 
+      {missingBank > 0 && (
+        <div className="flex items-center gap-2 p-3 rounded-md bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 text-sm print:hidden">
+          <AlertTriangle className="h-4 w-4" />
+          {missingBank} employee(s) have no bank account on file — add details under Employee → Bank tab.
+        </div>
+      )}
+
       <FilterBar>
         <div className="min-w-[260px]">
           <Label className="text-xs">Payroll period</Label>
@@ -148,7 +198,9 @@ export function BankDisbursementPage() {
                 <tr>
                   <th className="text-left px-3 py-2 w-16">Sr</th>
                   <th className="text-left px-3 py-2">Code</th>
-                  <th className="text-left px-3 py-2">Beneficiary name</th>
+                  <th className="text-left px-3 py-2">Beneficiary</th>
+                  <th className="text-left px-3 py-2">Bank</th>
+                  <th className="text-left px-3 py-2">Account / IBAN</th>
                   <th className="text-left px-3 py-2">Department</th>
                   <th className="text-right px-3 py-2">Amount (PKR)</th>
                   <th className="text-left px-3 py-2">Status</th>
@@ -159,7 +211,15 @@ export function BankDisbursementPage() {
                   <tr key={r.id} className="hover:bg-muted/30">
                     <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                     <td className="px-3 py-2 font-mono text-xs">{r.employee_code}</td>
-                    <td className="px-3 py-2 font-medium">{r.employee_name}</td>
+                    <td className="px-3 py-2 font-medium">{r.account_title || r.employee_name}</td>
+                    <td className="px-3 py-2 text-xs">{r.bank_name ?? '—'}</td>
+                    <td className="px-3 py-2 text-xs font-mono">
+                      {r.iban ? (
+                        <span title={r.account_number ?? ''}>{r.iban}</span>
+                      ) : (
+                        r.account_number ?? '—'
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-xs">{r.department ?? '—'}</td>
                     <td className="px-3 py-2 text-right tabular-nums font-semibold">{fmtMoney(r.net_pay)}</td>
                     <td className="px-3 py-2 text-xs">
@@ -171,7 +231,7 @@ export function BankDisbursementPage() {
                 ))}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground">
                       No payslips found for this period.
                     </td>
                   </tr>
@@ -180,7 +240,7 @@ export function BankDisbursementPage() {
               {rows.length > 0 && (
                 <tfoot className="bg-muted font-semibold">
                   <tr>
-                    <td colSpan={4} className="px-3 py-2 text-right">
+                    <td colSpan={6} className="px-3 py-2 text-right">
                       Total
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(total)}</td>
@@ -192,10 +252,6 @@ export function BankDisbursementPage() {
           )}
         </CardContent>
       </Card>
-
-      <p className="text-xs text-muted-foreground print:hidden">
-        Note: extend with bank account / IBAN once captured on the employee record.
-      </p>
 
       <style>{printableStyles}</style>
     </div>

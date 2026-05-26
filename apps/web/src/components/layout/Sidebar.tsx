@@ -75,6 +75,14 @@ const navSections: NavSection[] = [
     ],
   },
   {
+    heading: 'Recruitment',
+    items: [
+      { label: 'Recruitment hub', to: '/recruitment', perm: 'recruitment.view' },
+      { label: 'Job postings', to: '/recruitment/jobs', perm: 'recruitment.view' },
+      { label: 'Candidate pipeline', to: '/recruitment/pipeline', perm: 'recruitment.view' },
+    ],
+  },
+  {
     heading: 'Communication',
     items: [
       { label: 'Announcements', to: '/announcements', perm: 'announcement.view' },
@@ -118,6 +126,7 @@ const quickAddActions: QuickAction[] = [
   { label: 'New loan request', to: '/loans', perm: 'loan.create' },
   { label: 'New letter', to: '/letters', perm: 'letter.create' },
   { label: 'Submit resignation', to: '/resignations', perm: 'resignation.apply' },
+  { label: 'New job posting', to: '/recruitment/jobs', perm: 'recruitment.manage' },
   { label: 'New payroll run', to: '/payroll', perm: 'payroll.run' },
   { label: 'New user', to: '/admin/users', perm: 'user.create' },
 ]

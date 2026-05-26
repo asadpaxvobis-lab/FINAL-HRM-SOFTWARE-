@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Loader2, Plus, RefreshCw, Search, Activity, Calendar, Clock, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -12,7 +12,7 @@ import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { avatarColorFor, initialsFromName } from '@/lib/utils'
+import { avatarColorFor, initialsFromName, cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -102,6 +102,62 @@ const statusVariant = (s: string): 'warm' | 'outline' | 'secondary' => {
 
 const fmtTime = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString('en-PK', { hour: '2-digit', minute: '2-digit', hour12: true }) : '—'
+
+const requiredColumnHeaderClass =
+  'bg-amber-50/80 dark:bg-amber-950/25 text-amber-950 dark:text-amber-100 border-b-2 border-amber-300/80 dark:border-amber-700/50'
+const requiredCellMissingClass =
+  'bg-amber-50/70 dark:bg-amber-950/25 ring-1 ring-inset ring-amber-300/70 dark:ring-amber-700/50 text-amber-900 dark:text-amber-100 font-medium'
+const requiredInputClass =
+  'border-amber-300/80 bg-white focus-visible:ring-amber-400/40 dark:border-amber-700/60 dark:bg-background'
+const requiredFieldWrapClass =
+  'rounded-lg border border-amber-300/80 bg-amber-50/70 p-3 shadow-sm dark:border-amber-700/50 dark:bg-amber-950/20'
+
+function CompulsoryColumnHeader({ label, className }: { label: string; className?: string }) {
+  return (
+    <th className={cn('px-3 py-3', requiredColumnHeaderClass, className)}>
+      {label} <span className="text-destructive font-bold">*</span>
+    </th>
+  )
+}
+
+function CompulsoryField({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn(requiredFieldWrapClass, className)}>
+      <div className="space-y-2">
+        <Label className="text-amber-950 dark:text-amber-100">
+          {label} <span className="text-destructive font-bold">*</span>
+        </Label>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** Working day rows where in/out punches are expected (not leave, holiday, or weekly off). */
+function expectsPunches(status: string, d?: Daily) {
+  if (d?.is_holiday || d?.is_weekly_off) return false
+  if (['Leave', 'Holiday', 'Weekly Off'].includes(status)) return false
+  return true
+}
+
+function rowMetrics(d: Daily | undefined, dateStr: string) {
+  const computed = metricsFor(d, dateStr)
+  if (!d?.first_in) return computed
+  return {
+    worked_minutes: d.worked_minutes ?? computed.worked_minutes,
+    late_minutes: d.late_minutes ?? computed.late_minutes,
+    early_out_minutes: d.early_out_minutes ?? computed.early_out_minutes,
+    overtime_minutes: d.overtime_minutes ?? computed.overtime_minutes,
+  }
+}
 
 export function AttendancePage() {
   const { appUser, hasPermission } = useAuth()
@@ -202,7 +258,7 @@ export function AttendancePage() {
     const acc: Record<string, number> = { Present: 0, Late: 0, Absent: 0, Leave: 0, 'Weekly Off': 0, Holiday: 0, 'Half Day': 0 }
     for (const e of filtered) {
       const d = byEmployee.get(e.id)
-      const m = metricsFor(d, date)
+      const m = rowMetrics(d, date)
       let s = d?.status ?? 'Absent'
       if (d?.first_in && s === 'Present' && m.late_minutes > 0) s = 'Late'
       acc[s] = (acc[s] ?? 0) + 1
@@ -234,7 +290,7 @@ export function AttendancePage() {
 
   const openEdit = (emp: Employee) => {
     const d = byEmployee.get(emp.id)
-    const m = metricsFor(d, date)
+    const m = rowMetrics(d, date)
     setEditTarget(emp)
     setEditForm({
       id: d?.id ?? null,
@@ -261,6 +317,15 @@ export function AttendancePage() {
   const submitEdit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!appUser || !editTarget) return
+    const needsPunches = ['Present', 'Late', 'Half Day'].includes(editForm.status)
+    if (needsPunches && !editForm.first_in.trim()) {
+      toast.error('First in is required for this status')
+      return
+    }
+    if (needsPunches && !editForm.last_out.trim()) {
+      toast.error('Last out is required for this status')
+      return
+    }
     setBusy(true)
     const payload: Record<string, unknown> = {
       company_id: appUser.company_id,
@@ -321,12 +386,6 @@ export function AttendancePage() {
     await writeAuditLog({ action: 'CREATE', entityType: 'attendance_punch', entityId: data?.id, after: payload })
     toast.success('Punch recorded')
     setPunchOpen(false)
-    try {
-      const punchDate = punchForm.punch_at.slice(0, 10)
-      await recomputeAttendanceDaily(appUser.company_id, punchDate)
-    } catch (err) {
-      console.warn('Recompute after punch failed:', err)
-    }
     setBusy(false)
     void load()
   }
@@ -334,7 +393,7 @@ export function AttendancePage() {
   const exportDay = () => {
     const data = filtered.map((e) => {
       const d = byEmployee.get(e.id)
-      const m = metricsFor(d, date)
+      const m = rowMetrics(d, date)
       const status = d?.status ?? 'Absent'
       const displayStatus = d?.first_in && status === 'Present' && m.late_minutes > 0 ? 'Late' : status
       return {
@@ -419,6 +478,10 @@ export function AttendancePage() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          <p className="px-6 py-2 text-xs text-muted-foreground border-b bg-muted/20">
+            Columns marked <span className="text-destructive font-bold">*</span> are required for working-day attendance.
+            Missing in/out times are highlighted in amber.
+          </p>
           {loading ? (
             <div className="p-16 grid place-items-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -436,20 +499,23 @@ export function AttendancePage() {
                     <th className="px-6 py-3">Employee</th>
                     <th className="px-3 py-3">Shift</th>
                     <th className="px-3 py-3">Status</th>
-                    <th className="px-3 py-3">In</th>
-                    <th className="px-3 py-3">Out</th>
-                    <th className="px-3 py-3">Worked</th>
-                    <th className="px-3 py-3">Late</th>
-                    <th className="px-3 py-3">OT</th>
+                    <CompulsoryColumnHeader label="In" />
+                    <CompulsoryColumnHeader label="Out" />
+                    <CompulsoryColumnHeader label="Worked" />
+                    <CompulsoryColumnHeader label="Late" />
+                    <CompulsoryColumnHeader label="OT" />
                     {canUpdate && <th className="px-3 py-3 w-10"></th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {filtered.map((e) => {
                     const d = byEmployee.get(e.id)
-                    const m = metricsFor(d, date)
+                    const m = rowMetrics(d, date)
                     const status = d?.status ?? 'Absent'
                     const displayStatus = d?.first_in && status === 'Present' && m.late_minutes > 0 ? 'Late' : status
+                    const needsPunches = expectsPunches(displayStatus, d)
+                    const missingIn = needsPunches && !d?.first_in
+                    const missingOut = needsPunches && !d?.last_out
                     return (
                       <tr key={e.id} className="hover:bg-muted/20">
                         <td className="px-6 py-3">
@@ -475,16 +541,20 @@ export function AttendancePage() {
                         <td className="px-3 py-3">
                           <Badge variant={statusVariant(displayStatus)}>{displayStatus}</Badge>
                         </td>
-                        <td className="px-3 py-3 tabular-nums">{fmtTime(d?.first_in ?? null)}</td>
-                        <td className="px-3 py-3 tabular-nums">{fmtTime(d?.last_out ?? null)}</td>
+                        <td className={cn('px-3 py-3 tabular-nums', missingIn && requiredCellMissingClass)}>
+                          {fmtTime(d?.first_in ?? null)}
+                        </td>
+                        <td className={cn('px-3 py-3 tabular-nums', missingOut && requiredCellMissingClass)}>
+                          {fmtTime(d?.last_out ?? null)}
+                        </td>
                         <td className="px-3 py-3 tabular-nums">{fmtMinutes(m.worked_minutes, true)}</td>
                         <td className="px-3 py-3 tabular-nums">
-                          <span className={m.late_minutes > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}>
+                          <span className={m.late_minutes > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : undefined}>
                             {fmtMinutes(m.late_minutes, true)}
                           </span>
                         </td>
                         <td className="px-3 py-3 tabular-nums">
-                          <span className={m.overtime_minutes > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>
+                          <span className={m.overtime_minutes > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : undefined}>
                             {fmtMinutes(m.overtime_minutes, true)}
                           </span>
                         </td>
@@ -541,60 +611,101 @@ export function AttendancePage() {
                   placeholder="Reason / context"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>First in</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.first_in}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
-                    setEditForm((f) => {
-                      const m = recalcFromTimes(v, f.last_out, shift)
-                      return { ...f, first_in: v, ...m }
-                    })
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Last out</Label>
-                <Input
-                  type="datetime-local"
-                  value={editForm.last_out}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
-                    setEditForm((f) => {
-                      const m = recalcFromTimes(f.first_in, v, shift)
-                      return { ...f, last_out: v, ...m }
-                    })
-                  }}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Worked (minutes)</Label>
+              {['Present', 'Late', 'Half Day'].includes(editForm.status) ? (
+                <>
+                  <CompulsoryField label="First in">
+                    <Input
+                      type="datetime-local"
+                      required
+                      value={editForm.first_in}
+                      className={requiredInputClass}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                        setEditForm((f) => {
+                          const m = recalcFromTimes(v, f.last_out, shift)
+                          return { ...f, first_in: v, ...m }
+                        })
+                      }}
+                    />
+                  </CompulsoryField>
+                  <CompulsoryField label="Last out">
+                    <Input
+                      type="datetime-local"
+                      required
+                      value={editForm.last_out}
+                      className={requiredInputClass}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                        setEditForm((f) => {
+                          const m = recalcFromTimes(f.first_in, v, shift)
+                          return { ...f, last_out: v, ...m }
+                        })
+                      }}
+                    />
+                  </CompulsoryField>
+                </>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>First in</Label>
+                    <Input
+                      type="datetime-local"
+                      value={editForm.first_in}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                        setEditForm((f) => {
+                          const m = recalcFromTimes(v, f.last_out, shift)
+                          return { ...f, first_in: v, ...m }
+                        })
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Last out</Label>
+                    <Input
+                      type="datetime-local"
+                      value={editForm.last_out}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                        setEditForm((f) => {
+                          const m = recalcFromTimes(f.first_in, v, shift)
+                          return { ...f, last_out: v, ...m }
+                        })
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              <CompulsoryField label="Worked (minutes)">
                 <Input
                   type="number"
                   min={0}
+                  required
                   value={editForm.worked_minutes}
+                  className={requiredInputClass}
                   onChange={(e) => setEditForm({ ...editForm, worked_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
                   {fmtMinutes(Number(editForm.worked_minutes) || 0, true)}
                 </div>
-              </div>
-              <div className="space-y-2">
-                <Label>Late (minutes)</Label>
+              </CompulsoryField>
+              <CompulsoryField label="Late (minutes)">
                 <Input
                   type="number"
                   min={0}
+                  required
                   value={editForm.late_minutes}
+                  className={requiredInputClass}
                   onChange={(e) => setEditForm({ ...editForm, late_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
                   {fmtMinutes(Number(editForm.late_minutes) || 0, true)}
                 </div>
-              </div>
+              </CompulsoryField>
               <div className="space-y-2">
                 <Label>Early out (minutes)</Label>
                 <Input
@@ -607,18 +718,19 @@ export function AttendancePage() {
                   {fmtMinutes(Number(editForm.early_out_minutes) || 0, true)}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label>Overtime (minutes)</Label>
+              <CompulsoryField label="Overtime (minutes)">
                 <Input
                   type="number"
                   min={0}
+                  required
                   value={editForm.overtime_minutes}
+                  className={requiredInputClass}
                   onChange={(e) => setEditForm({ ...editForm, overtime_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
                   {fmtMinutes(Number(editForm.overtime_minutes) || 0, true)}
                 </div>
-              </div>
+              </CompulsoryField>
               <label className="flex items-center gap-2 text-sm sm:col-span-1">
                 <input
                   type="checkbox"
@@ -663,9 +775,13 @@ export function AttendancePage() {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={submitPunch} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Employee</Label>
-              <Select value={punchForm.employee_id} onChange={(e) => setPunchForm({ ...punchForm, employee_id: e.target.value })} required>
+            <CompulsoryField label="Employee">
+              <Select
+                value={punchForm.employee_id}
+                onChange={(e) => setPunchForm({ ...punchForm, employee_id: e.target.value })}
+                required
+                className={requiredInputClass}
+              >
                 <option value="">Select employee</option>
                 {employees.map((e) => (
                   <option key={e.id} value={e.id}>
@@ -673,17 +789,17 @@ export function AttendancePage() {
                   </option>
                 ))}
               </Select>
-            </div>
+            </CompulsoryField>
             <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Punch time</Label>
+              <CompulsoryField label="Punch time">
                 <Input
                   type="datetime-local"
                   required
                   value={punchForm.punch_at}
+                  className={requiredInputClass}
                   onChange={(e) => setPunchForm({ ...punchForm, punch_at: e.target.value })}
                 />
-              </div>
+              </CompulsoryField>
               <div className="space-y-2">
                 <Label>Type</Label>
                 <Select value={punchForm.punch_type} onChange={(e) => setPunchForm({ ...punchForm, punch_type: e.target.value })}>

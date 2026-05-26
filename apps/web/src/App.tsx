@@ -53,6 +53,10 @@ import { LeaveRegisterPage } from '@/pages/reports/LeaveRegister'
 import { LoanOutstandingPage } from '@/pages/reports/LoanOutstanding'
 import { ResignationsPage } from '@/pages/resignations/Resignations'
 import { ResignationDetailPage } from '@/pages/resignations/ResignationDetail'
+import { RecruitmentHubPage } from '@/pages/recruitment/RecruitmentHub'
+import { JobPostingsPage } from '@/pages/recruitment/JobPostings'
+import { RecruitmentPipelinePage } from '@/pages/recruitment/Pipeline'
+import { CandidateDetailPage } from '@/pages/recruitment/CandidateDetail'
 
 export default function App() {
   return (
@@ -443,6 +447,39 @@ export default function App() {
                 element={
                   <ProtectedRoute perm="resignation.view">
                     <ResignationDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="recruitment"
+                element={
+                  <ProtectedRoute perm="recruitment.view">
+                    <RecruitmentHubPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="recruitment/jobs"
+                element={
+                  <ProtectedRoute perm="recruitment.view">
+                    <JobPostingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="recruitment/pipeline"
+                element={
+                  <ProtectedRoute perm="recruitment.view">
+                    <RecruitmentPipelinePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="recruitment/candidates/:id"
+                element={
+                  <ProtectedRoute perm="recruitment.view">
+                    <CandidateDetailPage />
                   </ProtectedRoute>
                 }
               />

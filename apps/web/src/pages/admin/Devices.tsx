@@ -51,6 +51,12 @@ const emptyForm = {
   notes: '',
 }
 
+function pushEndpointUrl(token: string, serial?: string | null) {
+  const base = import.meta.env.VITE_SUPABASE_URL?.replace(/\/$/, '') ?? ''
+  const sn = serial?.trim() ? `&SN=${encodeURIComponent(serial.trim())}` : ''
+  return `${base}/functions/v1/zkteco-push/iclock/cdata?token=${encodeURIComponent(token)}${sn}`
+}
+
 function genToken() {
   const arr = new Uint8Array(24)
   crypto.getRandomValues(arr)
@@ -202,7 +208,7 @@ export function DevicesPage() {
     <div className="space-y-6">
       <PageHeader
         title="Attendance devices"
-        description="Register ZKTeco machines, face kiosks, mobile apps, and manual sources. The push-token is used by the .NET API endpoint to authenticate pushed punches."
+        description="Register ZKTeco machines, face kiosks, mobile apps, and manual sources. Configure the push URL on the device to send punches automatically."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void load()}>
@@ -318,7 +324,7 @@ export function DevicesPage() {
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit device' : 'Register device'}</DialogTitle>
             <DialogDescription>
-              The push token is included by the ZKTeco agent / kiosk / mobile app when pushing punches.
+              The push token authenticates the device. Set the ZKTeco server URL to the push endpoint below.
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4" onSubmit={onSubmit}>
@@ -368,6 +374,29 @@ export function DevicesPage() {
                   </Button>
                 </div>
               </div>
+              {form.push_token && form.device_type === 'ZKTeco' && (
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Push URL (ZKTeco server address)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={pushEndpointUrl(form.push_token, form.serial_no)}
+                      className="font-mono text-[11px]"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyToken(pushEndpointUrl(form.push_token, form.serial_no))}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    On the device: Communication → Cloud Server → set this URL. Employees need a matching Device PIN.
+                  </p>
+                </div>
+              )}
               <div className="space-y-2 sm:col-span-2">
                 <Label>Notes</Label>
                 <Input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />

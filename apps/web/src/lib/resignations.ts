@@ -12,10 +12,10 @@ export const REASON_CATEGORIES = [
 
 export const DEFAULT_CLEARANCE_STEPS = [
   { step_code: 'MANAGER', step_name: 'Reporting manager', sort_order: 1 },
-  { step_code: 'IT', step_name: 'IT — laptop & access', sort_order: 2 },
-  { step_code: 'HR', step_name: 'HR — documents & ID card', sort_order: 3 },
-  { step_code: 'FINANCE', step_name: 'Finance — advances & dues', sort_order: 4 },
-  { step_code: 'ADMIN', step_name: 'Admin — keys & assets', sort_order: 5 },
+  { step_code: 'IT', step_name: 'IT - laptop & access', sort_order: 2 },
+  { step_code: 'HR', step_name: 'HR - documents & ID card', sort_order: 3 },
+  { step_code: 'FINANCE', step_name: 'Finance - advances & dues', sort_order: 4 },
+  { step_code: 'ADMIN', step_name: 'Admin - keys & assets', sort_order: 5 },
 ] as const
 
 export type SettlementInput = {
