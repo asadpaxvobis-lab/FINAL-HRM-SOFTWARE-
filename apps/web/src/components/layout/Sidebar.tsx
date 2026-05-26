@@ -80,6 +80,7 @@ const navSections: NavSection[] = [
       { label: 'Announcements', to: '/announcements', perm: 'announcement.view' },
       { label: 'Letters', to: '/letters', perm: 'letter.view' },
       { label: 'Letter templates', to: '/letters/templates', perm: 'letter.template' },
+      { label: 'Resignations', to: '/resignations', perm: 'resignation.view' },
     ],
   },
   {
@@ -116,6 +117,7 @@ const quickAddActions: QuickAction[] = [
   { label: 'New expense claim', to: '/expenses', perm: 'expense.apply' },
   { label: 'New loan request', to: '/loans', perm: 'loan.create' },
   { label: 'New letter', to: '/letters', perm: 'letter.create' },
+  { label: 'Submit resignation', to: '/resignations', perm: 'resignation.apply' },
   { label: 'New payroll run', to: '/payroll', perm: 'payroll.run' },
   { label: 'New user', to: '/admin/users', perm: 'user.create' },
 ]

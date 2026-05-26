@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Plus, Pencil, RefreshCw, Loader2, Users, Search, ChevronRight, ArrowLeft, ArrowRight, Check, Camera, X, Trash2, Save } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
@@ -107,16 +107,16 @@ const STEP_LABELS: { id: Step; label: string }[] = [
 const pkr = (n: number) => `PKR ${Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
 
 function validateProfile(form: typeof emptyForm): string | null {
+  if (!form.branch_id) return 'Branch is required'
+  if (!form.department_id) return 'Department is required'
+  if (!form.designation_id) return 'Designation is required'
+  if (!form.date_of_joining) return 'Date of joining is required'
   if (!form.first_name.trim()) return 'First name is required'
   if (!form.last_name.trim()) return 'Last name is required'
   if (!form.cnic.trim()) return 'CNIC is required'
   if (!form.phone.trim()) return 'Phone is required'
   if (!form.email.trim()) return 'Email is required'
-  if (!form.date_of_joining) return 'Date of joining is required'
   if (!form.date_of_birth) return 'Date of birth is required'
-  if (!form.branch_id) return 'Branch is required'
-  if (!form.department_id) return 'Department is required'
-  if (!form.designation_id) return 'Designation is required'
   return null
 }
 
@@ -371,11 +371,11 @@ export function EmployeesPage() {
       cnic: form.cnic.trim() || null,
       gender: form.gender || null,
       date_of_birth: form.date_of_birth || null,
-      date_of_joining: form.date_of_joining || null,
+      date_of_joining: form.date_of_joining,
       employment_status: form.employment_status,
-      branch_id: form.branch_id || null,
-      department_id: form.department_id || null,
-      designation_id: form.designation_id || null,
+      branch_id: form.branch_id,
+      department_id: form.department_id,
+      designation_id: form.designation_id,
       reports_to_id: form.reports_to_id || null,
       is_active: form.is_active,
     }
@@ -712,7 +712,7 @@ export function EmployeesPage() {
             <DialogDescription>
               {editing
                 ? 'Update profile, compensation, statutory, and documents step by step.'
-                : 'Complete each step. Profile and compensation are required. Statutory and documents can be skipped.'}
+                : 'Complete each step. Branch, department, designation, joining date, and compensation are required.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -750,7 +750,14 @@ export function EmployeesPage() {
 
           {/* Step 1 — Profile */}
           {step === 1 && (
-            <div className="space-y-4">
+            <form
+              id="employee-profile-step"
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void goNext()
+              }}
+            >
               {/* Photo upload */}
               <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/20">
                 <Avatar className="h-20 w-20">
@@ -794,6 +801,14 @@ export function EmployeesPage() {
                 </div>
               </div>
 
+              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="inline-block h-3.5 w-3.5 shrink-0 rounded border border-amber-300/80 bg-amber-50/90 dark:border-amber-700/60 dark:bg-amber-950/30"
+                />
+                Highlighted fields are compulsory
+              </p>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Employee code</Label>
@@ -802,12 +817,12 @@ export function EmployeesPage() {
                     {editing ? 'Codes are immutable.' : 'Auto-generated.'}
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label>Status *</Label>
+                <RequiredField label="Status">
                   <Select
                     required
                     value={form.employment_status}
                     onChange={(e) => setForm({ ...form, employment_status: e.target.value })}
+                    className={requiredInputClass}
                   >
                     {EMPLOYMENT_STATUSES.map((s) => (
                       <option key={s} value={s}>
@@ -815,91 +830,112 @@ export function EmployeesPage() {
                       </option>
                     ))}
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>First name *</Label>
-                  <Input
-                    value={form.first_name}
-                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                </RequiredField>
+                <RequiredField label="Branch">
+                  <Select
                     required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Last name *</Label>
-                  <Input
-                    value={form.last_name}
-                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>CNIC *</Label>
-                  <Input
-                    value={form.cnic}
-                    onChange={(e) => setForm({ ...form, cnic: e.target.value })}
-                    placeholder="35201-1234567-1"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Phone *</Label>
-                  <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
-                </div>
-                <div className="space-y-2 sm:col-span-2">
-                  <Label>Email *</Label>
-                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-                </div>
-                <div className="space-y-2">
-                  <Label>Date of joining *</Label>
-                  <Input
-                    type="date"
-                    value={form.date_of_joining}
-                    onChange={(e) => setForm({ ...form, date_of_joining: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Date of birth *</Label>
-                  <Input
-                    type="date"
-                    value={form.date_of_birth}
-                    onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Branch *</Label>
-                  <Select required value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
-                    <option value="">Select…</option>
+                    value={form.branch_id}
+                    onChange={(e) => setForm({ ...form, branch_id: e.target.value })}
+                    className={requiredInputClass}
+                  >
+                    <option value="">Select branch…</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
                         {b.name}
                       </option>
                     ))}
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Department *</Label>
-                  <Select required value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
-                    <option value="">Select…</option>
+                </RequiredField>
+                <RequiredField label="Department">
+                  <Select
+                    required
+                    value={form.department_id}
+                    onChange={(e) => setForm({ ...form, department_id: e.target.value })}
+                    className={requiredInputClass}
+                  >
+                    <option value="">Select department…</option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.name}
                       </option>
                     ))}
                   </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Designation *</Label>
-                  <Select required value={form.designation_id} onChange={(e) => setForm({ ...form, designation_id: e.target.value })}>
-                    <option value="">Select…</option>
+                </RequiredField>
+                <RequiredField label="Designation">
+                  <Select
+                    required
+                    value={form.designation_id}
+                    onChange={(e) => setForm({ ...form, designation_id: e.target.value })}
+                    className={requiredInputClass}
+                  >
+                    <option value="">Select designation…</option>
                     {designations.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.title}
                       </option>
                     ))}
                   </Select>
-                </div>
+                </RequiredField>
+                <RequiredField label="Date of joining">
+                  <Input
+                    type="date"
+                    value={form.date_of_joining}
+                    onChange={(e) => setForm({ ...form, date_of_joining: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="First name">
+                  <Input
+                    value={form.first_name}
+                    onChange={(e) => setForm({ ...form, first_name: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="Last name">
+                  <Input
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="CNIC">
+                  <Input
+                    value={form.cnic}
+                    onChange={(e) => setForm({ ...form, cnic: e.target.value })}
+                    placeholder="35201-1234567-1"
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="Phone">
+                  <Input
+                    value={form.phone}
+                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="Email" span="full">
+                  <Input
+                    type="email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
+                <RequiredField label="Date of birth">
+                  <Input
+                    type="date"
+                    value={form.date_of_birth}
+                    onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                    required
+                    className={requiredInputClass}
+                  />
+                </RequiredField>
                 <div className="space-y-2">
                   <Label>Reports to</Label>
                   <Select value={form.reports_to_id} onChange={(e) => setForm({ ...form, reports_to_id: e.target.value })}>
@@ -916,7 +952,7 @@ export function EmployeesPage() {
                 <Checkbox checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: !!v })} />
                 Active
               </label>
-            </div>
+            </form>
           )}
 
           {/* Step 2 — Compensation */}
@@ -928,24 +964,31 @@ export function EmployeesPage() {
                   to add compensation after onboarding.
                 </div>
               )}
+              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="inline-block h-3.5 w-3.5 shrink-0 rounded border border-amber-300/80 bg-amber-50/90 dark:border-amber-700/60 dark:bg-amber-950/30"
+                />
+                Highlighted fields are compulsory
+              </p>
               <div className="grid sm:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Effective from *</Label>
+                <RequiredField label="Effective from">
                   <Input
                     type="date"
                     value={comp.effective_from}
                     onChange={(e) => setComp({ ...comp, effective_from: e.target.value })}
                     disabled={!canSetSalary}
                     required
+                    className={requiredInputClass}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Pay frequency *</Label>
+                </RequiredField>
+                <RequiredField label="Pay frequency">
                   <Select
                     required
                     value={comp.pay_frequency}
                     onChange={(e) => setComp({ ...comp, pay_frequency: e.target.value })}
                     disabled={!canSetSalary}
+                    className={requiredInputClass}
                   >
                     {PAY_FREQUENCIES.map((f) => (
                       <option key={f} value={f}>
@@ -953,7 +996,7 @@ export function EmployeesPage() {
                       </option>
                     ))}
                   </Select>
-                </div>
+                </RequiredField>
                 <div className="space-y-2">
                   <Label>Currency</Label>
                   <Input
@@ -965,12 +1008,12 @@ export function EmployeesPage() {
                 </div>
               </div>
               <div className="grid sm:grid-cols-3 gap-4">
-                <MoneyField label="Basic *" value={comp.basic} onChange={(v) => setComp({ ...comp, basic: v })} disabled={!canSetSalary} required />
-                <MoneyField label="House rent *" value={comp.house_rent} onChange={(v) => setComp({ ...comp, house_rent: v })} disabled={!canSetSalary} required />
-                <MoneyField label="Medical *" value={comp.medical} onChange={(v) => setComp({ ...comp, medical: v })} disabled={!canSetSalary} required />
-                <MoneyField label="Conveyance *" value={comp.conveyance} onChange={(v) => setComp({ ...comp, conveyance: v })} disabled={!canSetSalary} required />
-                <MoneyField label="Utilities *" value={comp.utilities} onChange={(v) => setComp({ ...comp, utilities: v })} disabled={!canSetSalary} required />
-                <MoneyField label="Other allowances *" value={comp.other_allowances} onChange={(v) => setComp({ ...comp, other_allowances: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Basic" value={comp.basic} onChange={(v) => setComp({ ...comp, basic: v })} disabled={!canSetSalary} required />
+                <MoneyField label="House rent" value={comp.house_rent} onChange={(v) => setComp({ ...comp, house_rent: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Medical" value={comp.medical} onChange={(v) => setComp({ ...comp, medical: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Conveyance" value={comp.conveyance} onChange={(v) => setComp({ ...comp, conveyance: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Utilities" value={comp.utilities} onChange={(v) => setComp({ ...comp, utilities: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Other allowances" value={comp.other_allowances} onChange={(v) => setComp({ ...comp, other_allowances: v })} disabled={!canSetSalary} required />
               </div>
               <div className="flex items-center justify-between p-3 rounded-md bg-primary/5 border border-primary/20 text-sm">
                 <span className="font-medium text-muted-foreground">Gross ({comp.pay_frequency})</span>
@@ -1132,7 +1175,12 @@ export function EmployeesPage() {
                   Skip & finish
                 </Button>
               )}
-              <Button type="button" onClick={() => void goNext()} disabled={busy}>
+              <Button
+                type={step === 1 ? 'submit' : 'button'}
+                form={step === 1 ? 'employee-profile-step' : undefined}
+                onClick={step === 1 ? undefined : () => void goNext()}
+                disabled={busy}
+              >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 {step < 4 && (
                   <>
@@ -1158,6 +1206,34 @@ export function EmployeesPage() {
   )
 }
 
+const requiredFieldClass =
+  'rounded-lg border border-amber-300/80 bg-amber-50/70 p-3 shadow-sm dark:border-amber-700/50 dark:bg-amber-950/20'
+const requiredInputClass =
+  'border-amber-300/80 bg-white focus-visible:ring-amber-400/40 dark:border-amber-700/60 dark:bg-background'
+
+function RequiredField({
+  label,
+  children,
+  className,
+  span,
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+  span?: 'full'
+}) {
+  return (
+    <div className={cn(requiredFieldClass, span === 'full' && 'sm:col-span-2', className)}>
+      <div className="space-y-2">
+        <Label className="text-amber-950 dark:text-amber-100">
+          {label} <span className="text-destructive font-bold">*</span>
+        </Label>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 function MoneyField({
   label,
   value,
@@ -1171,18 +1247,27 @@ function MoneyField({
   disabled?: boolean
   required?: boolean
 }) {
+  const field = (
+    <Input
+      type="number"
+      min={0}
+      step={1}
+      value={value}
+      onChange={(e) => onChange(+e.target.value || 0)}
+      disabled={disabled}
+      required={required}
+      className={required ? requiredInputClass : undefined}
+    />
+  )
+
+  if (required) {
+    return <RequiredField label={label}>{field}</RequiredField>
+  }
+
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
-      <Input
-        type="number"
-        min={0}
-        step={1}
-        value={value}
-        onChange={(e) => onChange(+e.target.value || 0)}
-        disabled={disabled}
-        required={required}
-      />
+      {field}
     </div>
   )
 }

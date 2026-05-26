@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   FileText,
   BarChart3,
+  LogOut,
   Shield,
   Settings as SettingsIcon,
   ClipboardList,
@@ -105,6 +106,7 @@ const quickActions: { heading: string; items: QuickAction[] }[] = [
     items: [
       { label: 'Announcements', description: 'Company-wide notice board', to: '/announcements', icon: Megaphone, perm: 'announcement.view', tone: 'rose' },
       { label: 'Letters', description: 'Offer, experience, NOC, warnings', to: '/letters', icon: FileText, perm: 'letter.view', tone: 'blue' },
+      { label: 'Resignations', description: 'Exit requests, clearance, settlement', to: '/resignations', icon: LogOut, perm: 'resignation.view', tone: 'amber' },
     ],
   },
   {

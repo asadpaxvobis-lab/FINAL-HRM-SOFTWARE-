@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from 'sonner'
-import { recomputeAttendanceDaily, fmtMinutes } from '@/lib/attendance'
+import { recomputeAttendanceDaily, fmtMinutes, computeAttendanceMetrics } from '@/lib/attendance'
 import { toCsv, downloadCsv } from '@/lib/csv'
 
 type Daily = {
@@ -38,8 +38,33 @@ type Daily = {
   overtime_minutes: number
   is_weekly_off: boolean
   is_holiday: boolean
+  scheduled_start?: string | null
+  scheduled_end?: string | null
   notes?: string | null
-  shifts?: { code: string; name: string } | null
+  shifts?: {
+    code: string
+    name: string
+    start_time?: string
+    end_time?: string
+    break_minutes?: number
+    grace_late_minutes?: number
+    grace_early_minutes?: number
+    is_night?: boolean
+  } | null
+}
+
+function metricsFor(d: Daily | undefined, dateStr: string) {
+  if (!d?.first_in) {
+    return { worked_minutes: 0, late_minutes: 0, early_out_minutes: 0, overtime_minutes: 0 }
+  }
+  return computeAttendanceMetrics(
+    dateStr,
+    d.first_in,
+    d.last_out,
+    d.shifts,
+    d.scheduled_start,
+    d.scheduled_end
+  )
 }
 
 const ATTENDANCE_STATUSES = ['Present', 'Late', 'Half Day', 'Absent', 'Leave', 'Holiday', 'Weekly Off']
@@ -129,7 +154,7 @@ export function AttendancePage() {
       supabase
         .from('attendance_daily')
         .select(
-          'id, employee_id, attendance_date, status, first_in, last_out, worked_minutes, late_minutes, early_out_minutes, overtime_minutes, is_weekly_off, is_holiday, notes, shifts(code, name)'
+          'id, employee_id, attendance_date, status, first_in, last_out, worked_minutes, late_minutes, early_out_minutes, overtime_minutes, is_weekly_off, is_holiday, scheduled_start, scheduled_end, notes, shifts(code, name, start_time, end_time, break_minutes, grace_late_minutes, grace_early_minutes, is_night)'
         )
         .eq('attendance_date', date),
     ])
@@ -177,11 +202,13 @@ export function AttendancePage() {
     const acc: Record<string, number> = { Present: 0, Late: 0, Absent: 0, Leave: 0, 'Weekly Off': 0, Holiday: 0, 'Half Day': 0 }
     for (const e of filtered) {
       const d = byEmployee.get(e.id)
-      const s = d?.status ?? 'Absent'
+      const m = metricsFor(d, date)
+      let s = d?.status ?? 'Absent'
+      if (d?.first_in && s === 'Present' && m.late_minutes > 0) s = 'Late'
       acc[s] = (acc[s] ?? 0) + 1
     }
     return acc
-  }, [filtered, byEmployee])
+  }, [filtered, byEmployee, date])
 
   const onRecompute = async () => {
     if (!appUser) return
@@ -207,16 +234,17 @@ export function AttendancePage() {
 
   const openEdit = (emp: Employee) => {
     const d = byEmployee.get(emp.id)
+    const m = metricsFor(d, date)
     setEditTarget(emp)
     setEditForm({
       id: d?.id ?? null,
       status: d?.status ?? 'Absent',
       first_in: toLocalInput(d?.first_in ?? null),
       last_out: toLocalInput(d?.last_out ?? null),
-      worked_minutes: d?.worked_minutes ?? 0,
-      late_minutes: d?.late_minutes ?? 0,
-      early_out_minutes: d?.early_out_minutes ?? 0,
-      overtime_minutes: d?.overtime_minutes ?? 0,
+      worked_minutes: m.worked_minutes,
+      late_minutes: m.late_minutes,
+      early_out_minutes: m.early_out_minutes,
+      overtime_minutes: m.overtime_minutes,
       is_holiday: d?.is_holiday ?? false,
       is_weekly_off: d?.is_weekly_off ?? false,
       notes: d?.notes ?? '',
@@ -224,13 +252,10 @@ export function AttendancePage() {
     setEditOpen(true)
   }
 
-  // Live-derive worked minutes whenever the user changes in/out.
-  const recalcWorkedFromTimes = (first_in: string, last_out: string) => {
-    if (!first_in || !last_out) return 0
-    const a = new Date(first_in).getTime()
-    const b = new Date(last_out).getTime()
-    if (isNaN(a) || isNaN(b) || b <= a) return 0
-    return Math.round((b - a) / 60000)
+  const recalcFromTimes = (first_in: string, last_out: string, shift?: Daily['shifts']) => {
+    const firstIso = first_in ? new Date(first_in).toISOString() : null
+    const lastIso = last_out ? new Date(last_out).toISOString() : null
+    return computeAttendanceMetrics(date, firstIso, lastIso, shift ?? null, null, null)
   }
 
   const submitEdit = async (e: React.FormEvent) => {
@@ -309,18 +334,21 @@ export function AttendancePage() {
   const exportDay = () => {
     const data = filtered.map((e) => {
       const d = byEmployee.get(e.id)
+      const m = metricsFor(d, date)
+      const status = d?.status ?? 'Absent'
+      const displayStatus = d?.first_in && status === 'Present' && m.late_minutes > 0 ? 'Late' : status
       return {
         employee_code: e.employee_code,
         full_name: e.full_name,
         branch: e.branches?.name ?? '',
         department: e.departments?.name ?? '',
-        status: d?.status ?? 'Absent',
+        status: displayStatus,
         first_in: d?.first_in ? new Date(d.first_in).toLocaleString('en-PK') : '',
         last_out: d?.last_out ? new Date(d.last_out).toLocaleString('en-PK') : '',
-        worked_minutes: d?.worked_minutes ?? 0,
-        late_minutes: d?.late_minutes ?? 0,
-        early_out_minutes: d?.early_out_minutes ?? 0,
-        overtime_minutes: d?.overtime_minutes ?? 0,
+        worked_minutes: m.worked_minutes,
+        late_minutes: m.late_minutes,
+        early_out_minutes: m.early_out_minutes,
+        overtime_minutes: m.overtime_minutes,
       }
     })
     downloadCsv(`attendance-${date}.csv`, toCsv(data))
@@ -419,7 +447,9 @@ export function AttendancePage() {
                 <tbody className="divide-y">
                   {filtered.map((e) => {
                     const d = byEmployee.get(e.id)
+                    const m = metricsFor(d, date)
                     const status = d?.status ?? 'Absent'
+                    const displayStatus = d?.first_in && status === 'Present' && m.late_minutes > 0 ? 'Late' : status
                     return (
                       <tr key={e.id} className="hover:bg-muted/20">
                         <td className="px-6 py-3">
@@ -443,24 +473,20 @@ export function AttendancePage() {
                           )}
                         </td>
                         <td className="px-3 py-3">
-                          <Badge variant={statusVariant(status)}>{status}</Badge>
+                          <Badge variant={statusVariant(displayStatus)}>{displayStatus}</Badge>
                         </td>
                         <td className="px-3 py-3 tabular-nums">{fmtTime(d?.first_in ?? null)}</td>
                         <td className="px-3 py-3 tabular-nums">{fmtTime(d?.last_out ?? null)}</td>
-                        <td className="px-3 py-3 tabular-nums">{fmtMinutes(d?.worked_minutes ?? 0)}</td>
+                        <td className="px-3 py-3 tabular-nums">{fmtMinutes(m.worked_minutes, true)}</td>
                         <td className="px-3 py-3 tabular-nums">
-                          {d?.late_minutes ? (
-                            <span className="text-amber-600 dark:text-amber-400">{fmtMinutes(d.late_minutes)}</span>
-                          ) : (
-                            '—'
-                          )}
+                          <span className={m.late_minutes > 0 ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}>
+                            {fmtMinutes(m.late_minutes, true)}
+                          </span>
                         </td>
                         <td className="px-3 py-3 tabular-nums">
-                          {d?.overtime_minutes ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">{fmtMinutes(d.overtime_minutes)}</span>
-                          ) : (
-                            '—'
-                          )}
+                          <span className={m.overtime_minutes > 0 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}>
+                            {fmtMinutes(m.overtime_minutes, true)}
+                          </span>
                         </td>
                         {canUpdate && (
                           <td className="px-3 py-3">
@@ -522,11 +548,11 @@ export function AttendancePage() {
                   value={editForm.first_in}
                   onChange={(e) => {
                     const v = e.target.value
-                    setEditForm((f) => ({
-                      ...f,
-                      first_in: v,
-                      worked_minutes: recalcWorkedFromTimes(v, f.last_out) || f.worked_minutes,
-                    }))
+                    const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                    setEditForm((f) => {
+                      const m = recalcFromTimes(v, f.last_out, shift)
+                      return { ...f, first_in: v, ...m }
+                    })
                   }}
                 />
               </div>
@@ -537,11 +563,11 @@ export function AttendancePage() {
                   value={editForm.last_out}
                   onChange={(e) => {
                     const v = e.target.value
-                    setEditForm((f) => ({
-                      ...f,
-                      last_out: v,
-                      worked_minutes: recalcWorkedFromTimes(f.first_in, v) || f.worked_minutes,
-                    }))
+                    const shift = editTarget ? byEmployee.get(editTarget.id)?.shifts : null
+                    setEditForm((f) => {
+                      const m = recalcFromTimes(f.first_in, v, shift)
+                      return { ...f, last_out: v, ...m }
+                    })
                   }}
                 />
               </div>
@@ -554,7 +580,7 @@ export function AttendancePage() {
                   onChange={(e) => setEditForm({ ...editForm, worked_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  {fmtMinutes(Number(editForm.worked_minutes) || 0)}
+                  {fmtMinutes(Number(editForm.worked_minutes) || 0, true)}
                 </div>
               </div>
               <div className="space-y-2">
@@ -566,7 +592,7 @@ export function AttendancePage() {
                   onChange={(e) => setEditForm({ ...editForm, late_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  {fmtMinutes(Number(editForm.late_minutes) || 0)}
+                  {fmtMinutes(Number(editForm.late_minutes) || 0, true)}
                 </div>
               </div>
               <div className="space-y-2">
@@ -578,7 +604,7 @@ export function AttendancePage() {
                   onChange={(e) => setEditForm({ ...editForm, early_out_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  {fmtMinutes(Number(editForm.early_out_minutes) || 0)}
+                  {fmtMinutes(Number(editForm.early_out_minutes) || 0, true)}
                 </div>
               </div>
               <div className="space-y-2">
@@ -590,7 +616,7 @@ export function AttendancePage() {
                   onChange={(e) => setEditForm({ ...editForm, overtime_minutes: Number(e.target.value) })}
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  {fmtMinutes(Number(editForm.overtime_minutes) || 0)}
+                  {fmtMinutes(Number(editForm.overtime_minutes) || 0, true)}
                 </div>
               </div>
               <label className="flex items-center gap-2 text-sm sm:col-span-1">

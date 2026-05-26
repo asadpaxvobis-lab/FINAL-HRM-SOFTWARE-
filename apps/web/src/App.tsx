@@ -11,7 +11,6 @@ import { UsersPage } from '@/pages/admin/Users'
 import { RolesPage } from '@/pages/admin/Roles'
 import { SettingsPage } from '@/pages/admin/Settings'
 import { AuditLogPage } from '@/pages/admin/AuditLog'
-import { PlaceholderPage } from '@/pages/Placeholder'
 import { BranchesPage } from '@/pages/master/Branches'
 import { DepartmentsPage } from '@/pages/master/Departments'
 import { DesignationsPage } from '@/pages/master/Designations'
@@ -52,6 +51,8 @@ import { BankDisbursementPage } from '@/pages/reports/BankDisbursement'
 import { StatutoryReportPage } from '@/pages/reports/Statutory'
 import { LeaveRegisterPage } from '@/pages/reports/LeaveRegister'
 import { LoanOutstandingPage } from '@/pages/reports/LoanOutstanding'
+import { ResignationsPage } from '@/pages/resignations/Resignations'
+import { ResignationDetailPage } from '@/pages/resignations/ResignationDetail'
 
 export default function App() {
   return (
@@ -425,6 +426,23 @@ export default function App() {
                 element={
                   <ProtectedRoute perm="loan.view">
                     <LoanOutstandingPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="resignations"
+                element={
+                  <ProtectedRoute perm="resignation.view">
+                    <ResignationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="resignations/:id"
+                element={
+                  <ProtectedRoute perm="resignation.view">
+                    <ResignationDetailPage />
                   </ProtectedRoute>
                 }
               />
