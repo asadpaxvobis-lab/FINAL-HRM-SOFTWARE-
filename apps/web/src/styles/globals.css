@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light theme - warm orange + zinc neutrals */
+    --background: 0 0% 100%;            /* white */
+    --foreground: 240 10% 3.9%;         /* zinc-950 */
+
+    --card: 0 0% 100%;                  /* white */
+    --card-foreground: 240 10% 3.9%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+
+    --primary: 24 95% 53%;              /* orange-500 #f97316 */
+    --primary-foreground: 0 0% 100%;    /* white */
+
+    --secondary: 240 4.8% 95.9%;        /* zinc-100 */
+    --secondary-foreground: 240 5.9% 10%;
+
+    --muted: 240 4.8% 95.9%;            /* zinc-100 */
+    --muted-foreground: 240 3.8% 46.1%; /* zinc-500 */
+
+    --accent: 24 95% 95%;               /* orange-50 */
+    --accent-foreground: 24 95% 30%;    /* orange-800 */
+
+    --destructive: 0 84.2% 60.2%;       /* red-500 */
+    --destructive-foreground: 0 0% 98%;
+
+    --success: 142 71% 45%;             /* green-500 */
+    --success-foreground: 0 0% 100%;
+
+    --border: 240 5.9% 90%;             /* zinc-200 */
+    --input: 240 5.9% 90%;              /* zinc-200 */
+    --ring: 24 95% 53%;                 /* orange-500 (focus) */
+
+    --radius: 0.75rem;                  /* rounded-xl base */
+  }
+
+  .dark {
+    --background: 240 10% 3.9%;         /* zinc-950 */
+    --foreground: 0 0% 98%;             /* zinc-50 */
+
+    --card: 240 6% 10%;                 /* zinc-900 */
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 6% 10%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 27 96% 61%;              /* orange-400 lighter for dark bg */
+    --primary-foreground: 240 10% 3.9%;
+
+    --secondary: 240 3.7% 15.9%;        /* zinc-800 */
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;   /* zinc-400 */
+
+    --accent: 24 30% 18%;
+    --accent-foreground: 27 96% 80%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+
+    --success: 142 65% 40%;
+    --success-foreground: 0 0% 98%;
+
+    --border: 240 3.7% 18%;
+    --input: 240 3.7% 18%;
+    --ring: 27 96% 61%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html, body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+  /* Tabular numbers for dashboard KPIs and tables */
+  .tabular-nums {
+    font-feature-settings: 'tnum';
+  }
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-muted-foreground/40;
+}

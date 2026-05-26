@@ -1,0 +1,345 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { Toaster } from 'sonner'
+import { ThemeProvider } from '@/contexts/ThemeContext'
+import { AuthProvider } from '@/contexts/AuthContext'
+import { AppShell } from '@/components/layout/AppShell'
+import { ProtectedRoute } from '@/components/ProtectedRoute'
+import { LoginPage } from '@/pages/Login'
+import { ChangePasswordPage } from '@/pages/ChangePassword'
+import { DashboardPage } from '@/pages/Dashboard'
+import { UsersPage } from '@/pages/admin/Users'
+import { RolesPage } from '@/pages/admin/Roles'
+import { SettingsPage } from '@/pages/admin/Settings'
+import { AuditLogPage } from '@/pages/admin/AuditLog'
+import { PlaceholderPage } from '@/pages/Placeholder'
+import { BranchesPage } from '@/pages/master/Branches'
+import { DepartmentsPage } from '@/pages/master/Departments'
+import { DesignationsPage } from '@/pages/master/Designations'
+import { EmployeesPage } from '@/pages/master/Employees'
+import { EmployeeDetailPage } from '@/pages/master/EmployeeDetail'
+import { HolidaysPage } from '@/pages/master/Holidays'
+import { ShiftsPage } from '@/pages/master/Shifts'
+import { RosterPage } from '@/pages/master/Roster'
+import { AttendancePage } from '@/pages/attendance/Attendance'
+import { CorrectionsPage } from '@/pages/attendance/Corrections'
+import { DevicesPage } from '@/pages/admin/Devices'
+import { ProfilePage } from '@/pages/Profile'
+import { LeavePage } from '@/pages/leave/Leave'
+import { LeaveTypesPage } from '@/pages/leave/LeaveTypes'
+import { LeaveBalancesPage } from '@/pages/leave/LeaveBalances'
+import { PayrollPage } from '@/pages/payroll/Payroll'
+import { PayrollComponentsPage } from '@/pages/payroll/Components'
+import { TaxSlabsPage } from '@/pages/payroll/TaxSlabs'
+import { PayrollPeriodDetailPage } from '@/pages/payroll/PayrollPeriodDetail'
+import { PayslipDetailPage } from '@/pages/payroll/PayslipDetail'
+import { ExpensesPage } from '@/pages/expenses/Expenses'
+import { ExpenseDetailPage } from '@/pages/expenses/ExpenseDetail'
+import { ExpenseCategoriesPage } from '@/pages/expenses/Categories'
+import { LoansPage } from '@/pages/loans/Loans'
+import { LoanTypesPage } from '@/pages/loans/LoanTypes'
+import { LoanDetailPage } from '@/pages/loans/LoanDetail'
+import { AnnouncementsPage } from '@/pages/announcements/Announcements'
+import { AnnouncementDetailPage } from '@/pages/announcements/AnnouncementDetail'
+import { OvertimePage } from '@/pages/overtime/Overtime'
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/change-password"
+              element={
+                <ProtectedRoute>
+                  <ChangePasswordPage />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              element={
+                <ProtectedRoute>
+                  <AppShell />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+
+              {/* Admin section */}
+              <Route
+                path="admin/users"
+                element={
+                  <ProtectedRoute perm="user.view">
+                    <UsersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/roles"
+                element={
+                  <ProtectedRoute perm="role.view">
+                    <RolesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/settings"
+                element={
+                  <ProtectedRoute perm="settings.view">
+                    <SettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/audit"
+                element={
+                  <ProtectedRoute perm="audit.view">
+                    <AuditLogPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Master data (Phase 2) */}
+              <Route
+                path="employees"
+                element={
+                  <ProtectedRoute perm="employee.view">
+                    <EmployeesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="departments"
+                element={
+                  <ProtectedRoute perm="department.view">
+                    <DepartmentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="designations"
+                element={
+                  <ProtectedRoute perm="designation.view">
+                    <DesignationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="branches"
+                element={
+                  <ProtectedRoute perm="branch.view">
+                    <BranchesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="employees/:id"
+                element={
+                  <ProtectedRoute perm="employee.view">
+                    <EmployeeDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="holidays"
+                element={
+                  <ProtectedRoute perm="holiday.view">
+                    <HolidaysPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="shifts"
+                element={
+                  <ProtectedRoute perm="shift.view">
+                    <ShiftsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="roster"
+                element={
+                  <ProtectedRoute perm="shift.view">
+                    <RosterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="attendance"
+                element={
+                  <ProtectedRoute perm="attendance.view">
+                    <AttendancePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="attendance/corrections"
+                element={
+                  <ProtectedRoute perm="attendance.view">
+                    <CorrectionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="overtime"
+                element={
+                  <ProtectedRoute perm="overtime.view">
+                    <OvertimePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/devices"
+                element={
+                  <ProtectedRoute perm="attendance.view">
+                    <DevicesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="leave"
+                element={
+                  <ProtectedRoute perm="leave.view">
+                    <LeavePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="leave/types"
+                element={
+                  <ProtectedRoute perm="leave.config">
+                    <LeaveTypesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="leave/balances"
+                element={
+                  <ProtectedRoute perm="leave.view">
+                    <LeaveBalancesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="payroll"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <PayrollPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="payroll/components"
+                element={
+                  <ProtectedRoute perm="payroll.config">
+                    <PayrollComponentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="payroll/tax-slabs"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <TaxSlabsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="payroll/:id"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <PayrollPeriodDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="payroll/payslip/:id"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <PayslipDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="expenses"
+                element={
+                  <ProtectedRoute perm="expense.view">
+                    <ExpensesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="expenses/categories"
+                element={
+                  <ProtectedRoute perm="expense.config">
+                    <ExpenseCategoriesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="expenses/:id"
+                element={
+                  <ProtectedRoute perm="expense.view">
+                    <ExpenseDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              {/* Loans (Phase 7) */}
+              <Route
+                path="loans"
+                element={
+                  <ProtectedRoute perm="loan.view">
+                    <LoansPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="loans/types"
+                element={
+                  <ProtectedRoute perm="loan.approve">
+                    <LoanTypesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="loans/:id"
+                element={
+                  <ProtectedRoute perm="loan.view">
+                    <LoanDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+
+              <Route
+                path="announcements"
+                element={
+                  <ProtectedRoute perm="announcement.view">
+                    <AnnouncementsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="announcements/:id"
+                element={
+                  <ProtectedRoute perm="announcement.view">
+                    <AnnouncementDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="letters" element={<PlaceholderPage title="Letters" description="Generate offer, experience, salary certificate, NOC, transfer, warning letters" phase={8} />} />
+              <Route path="reports" element={<PlaceholderPage title="Reports" description="Standard reports pack: muster roll, salary register, EOBI/PF/Tax statements, headcount" phase={10} />} />
+
+              <Route path="profile" element={<ProfilePage />} />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+        <Toaster richColors position="top-right" closeButton />
+      </AuthProvider>
+    </ThemeProvider>
+  )
+}
