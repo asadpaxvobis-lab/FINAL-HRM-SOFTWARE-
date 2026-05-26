@@ -41,6 +41,17 @@ import { LoanDetailPage } from '@/pages/loans/LoanDetail'
 import { AnnouncementsPage } from '@/pages/announcements/Announcements'
 import { AnnouncementDetailPage } from '@/pages/announcements/AnnouncementDetail'
 import { OvertimePage } from '@/pages/overtime/Overtime'
+import { LettersPage } from '@/pages/letters/Letters'
+import { LetterTemplatesPage } from '@/pages/letters/Templates'
+import { LetterDetailPage } from '@/pages/letters/LetterDetail'
+import { ReportsHubPage } from '@/pages/reports/ReportsHub'
+import { DirectoryReportPage } from '@/pages/reports/Directory'
+import { MusterRollPage } from '@/pages/reports/MusterRoll'
+import { SalaryRegisterPage } from '@/pages/reports/SalaryRegister'
+import { BankDisbursementPage } from '@/pages/reports/BankDisbursement'
+import { StatutoryReportPage } from '@/pages/reports/Statutory'
+import { LeaveRegisterPage } from '@/pages/reports/LeaveRegister'
+import { LoanOutstandingPage } from '@/pages/reports/LoanOutstanding'
 
 export default function App() {
   return (
@@ -329,8 +340,94 @@ export default function App() {
                   </ProtectedRoute>
                 }
               />
-              <Route path="letters" element={<PlaceholderPage title="Letters" description="Generate offer, experience, salary certificate, NOC, transfer, warning letters" phase={8} />} />
-              <Route path="reports" element={<PlaceholderPage title="Reports" description="Standard reports pack: muster roll, salary register, EOBI/PF/Tax statements, headcount" phase={10} />} />
+              <Route
+                path="letters"
+                element={
+                  <ProtectedRoute perm="letter.view">
+                    <LettersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="letters/templates"
+                element={
+                  <ProtectedRoute perm="letter.template">
+                    <LetterTemplatesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="letters/:id"
+                element={
+                  <ProtectedRoute perm="letter.view">
+                    <LetterDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports"
+                element={
+                  <ProtectedRoute perm="report.view">
+                    <ReportsHubPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/directory"
+                element={
+                  <ProtectedRoute perm="employee.view">
+                    <DirectoryReportPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/muster"
+                element={
+                  <ProtectedRoute perm="attendance.view">
+                    <MusterRollPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/salary-register"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <SalaryRegisterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/bank-disbursement"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <BankDisbursementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/statutory"
+                element={
+                  <ProtectedRoute perm="payroll.view">
+                    <StatutoryReportPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/leave"
+                element={
+                  <ProtectedRoute perm="leave.view">
+                    <LeaveRegisterPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="reports/loans"
+                element={
+                  <ProtectedRoute perm="loan.view">
+                    <LoanOutstandingPage />
+                  </ProtectedRoute>
+                }
+              />
 
               <Route path="profile" element={<ProfilePage />} />
             </Route>

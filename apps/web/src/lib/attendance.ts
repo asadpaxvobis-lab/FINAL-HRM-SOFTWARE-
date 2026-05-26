@@ -178,6 +178,11 @@ export async function recomputeAttendanceDaily(companyId: string, dateStr: strin
       if (last_out && last_out > scheduled_end) {
         overtime_minutes = diffMinutes(scheduled_end, last_out)
       }
+    } else if (worked_minutes > 0) {
+      // No shift assigned — fall back to a standard 8-hour workday for OT.
+      // Late cannot be computed without a schedule, so leave it at 0.
+      const STANDARD_DAY_MINUTES = 8 * 60
+      overtime_minutes = Math.max(0, worked_minutes - STANDARD_DAY_MINUTES)
     }
 
     let status: DailyComputed['status'] = 'Absent'

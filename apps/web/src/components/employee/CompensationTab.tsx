@@ -56,6 +56,13 @@ const emptyForm = {
 
 const pkr = (n: number) => `PKR ${Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
 
+function validateCompForm(form: typeof emptyForm): string | null {
+  if (!form.effective_from) return 'Effective from is required'
+  if (!form.pay_frequency) return 'Pay frequency is required'
+  if (form.basic <= 0) return 'Basic salary is required (must be greater than 0)'
+  return null
+}
+
 export function CompensationTab({ employeeId }: { employeeId: string }) {
   const { hasPermission } = useAuth()
   const canEdit = hasPermission('payroll.salary') || hasPermission('payroll.config')
@@ -138,6 +145,11 @@ export function CompensationTab({ employeeId }: { employeeId: string }) {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const err = validateCompForm(form)
+    if (err) {
+      toast.error(err)
+      return
+    }
     setBusy(true)
     const payload = {
       employee_id: employeeId,
@@ -303,7 +315,7 @@ export function CompensationTab({ employeeId }: { employeeId: string }) {
           <form onSubmit={onSubmit} className="space-y-4">
             <div className="grid sm:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Effective from</Label>
+                <Label>Effective from *</Label>
                 <Input type="date" required value={form.effective_from} onChange={(e) => setForm({ ...form, effective_from: e.target.value })} />
               </div>
               <div className="space-y-2">
@@ -311,8 +323,8 @@ export function CompensationTab({ employeeId }: { employeeId: string }) {
                 <Input type="date" value={form.effective_to} onChange={(e) => setForm({ ...form, effective_to: e.target.value })} />
               </div>
               <div className="space-y-2">
-                <Label>Pay frequency</Label>
-                <Select value={form.pay_frequency} onChange={(e) => setForm({ ...form, pay_frequency: e.target.value })}>
+                <Label>Pay frequency *</Label>
+                <Select required value={form.pay_frequency} onChange={(e) => setForm({ ...form, pay_frequency: e.target.value })}>
                   {PAY_FREQUENCIES.map((f) => (
                     <option key={f} value={f}>{f}</option>
                   ))}
@@ -320,12 +332,12 @@ export function CompensationTab({ employeeId }: { employeeId: string }) {
               </div>
             </div>
             <div className="grid sm:grid-cols-3 gap-4">
-              <MoneyField label="Basic" value={form.basic} onChange={(v) => setForm({ ...form, basic: v })} />
-              <MoneyField label="House rent" value={form.house_rent} onChange={(v) => setForm({ ...form, house_rent: v })} />
-              <MoneyField label="Medical" value={form.medical} onChange={(v) => setForm({ ...form, medical: v })} />
-              <MoneyField label="Conveyance" value={form.conveyance} onChange={(v) => setForm({ ...form, conveyance: v })} />
-              <MoneyField label="Utilities" value={form.utilities} onChange={(v) => setForm({ ...form, utilities: v })} />
-              <MoneyField label="Other allowances" value={form.other_allowances} onChange={(v) => setForm({ ...form, other_allowances: v })} />
+              <MoneyField label="Basic *" value={form.basic} onChange={(v) => setForm({ ...form, basic: v })} required />
+              <MoneyField label="House rent *" value={form.house_rent} onChange={(v) => setForm({ ...form, house_rent: v })} required />
+              <MoneyField label="Medical *" value={form.medical} onChange={(v) => setForm({ ...form, medical: v })} required />
+              <MoneyField label="Conveyance *" value={form.conveyance} onChange={(v) => setForm({ ...form, conveyance: v })} required />
+              <MoneyField label="Utilities *" value={form.utilities} onChange={(v) => setForm({ ...form, utilities: v })} required />
+              <MoneyField label="Other allowances *" value={form.other_allowances} onChange={(v) => setForm({ ...form, other_allowances: v })} required />
             </div>
             <div className="flex items-center justify-between p-3 rounded-md bg-muted text-sm">
               <span>Gross ({form.pay_frequency})</span>
@@ -364,7 +376,7 @@ function Pair({ label, value }: { label: string; value: string }) {
   )
 }
 
-function MoneyField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function MoneyField({ label, value, onChange, required }: { label: string; value: number; onChange: (v: number) => void; required?: boolean }) {
   return (
     <div className="space-y-2">
       <Label>{label}</Label>
@@ -374,6 +386,7 @@ function MoneyField({ label, value, onChange }: { label: string; value: number; 
         step={1}
         value={value}
         onChange={(e) => onChange(+e.target.value || 0)}
+        required={required}
       />
     </div>
   )

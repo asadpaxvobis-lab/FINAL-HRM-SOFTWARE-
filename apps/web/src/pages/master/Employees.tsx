@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, RefreshCw, Loader2, Users, Search, ChevronRight, ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { Plus, Pencil, RefreshCw, Loader2, Users, Search, ChevronRight, ArrowLeft, ArrowRight, Check, Camera, X, Trash2, Save } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import {
   Dialog,
@@ -41,6 +41,7 @@ type Employee = {
   cnic: string | null
   employment_status: string
   is_active: boolean
+  photo_url: string | null
   branch_id: string | null
   department_id: string | null
   designation_id: string | null
@@ -105,11 +106,33 @@ const STEP_LABELS: { id: Step; label: string }[] = [
 
 const pkr = (n: number) => `PKR ${Number(n).toLocaleString('en-PK', { maximumFractionDigits: 0 })}`
 
+function validateProfile(form: typeof emptyForm): string | null {
+  if (!form.first_name.trim()) return 'First name is required'
+  if (!form.last_name.trim()) return 'Last name is required'
+  if (!form.cnic.trim()) return 'CNIC is required'
+  if (!form.phone.trim()) return 'Phone is required'
+  if (!form.email.trim()) return 'Email is required'
+  if (!form.date_of_joining) return 'Date of joining is required'
+  if (!form.date_of_birth) return 'Date of birth is required'
+  if (!form.branch_id) return 'Branch is required'
+  if (!form.department_id) return 'Department is required'
+  if (!form.designation_id) return 'Designation is required'
+  return null
+}
+
+function validateComp(comp: typeof emptyComp): string | null {
+  if (!comp.effective_from) return 'Effective from is required'
+  if (!comp.pay_frequency) return 'Pay frequency is required'
+  if (comp.basic <= 0) return 'Basic salary is required (must be greater than 0)'
+  return null
+}
+
 export function EmployeesPage() {
   const navigate = useNavigate()
   const { appUser, hasPermission } = useAuth()
   const canCreate = hasPermission('employee.create')
   const canUpdate = hasPermission('employee.update')
+  const canDelete = hasPermission('employee.delete')
   const canSetSalary = hasPermission('payroll.salary') || hasPermission('payroll.config')
   const [rows, setRows] = useState<Employee[]>([])
   const [branches, setBranches] = useState<Lookup[]>([])
@@ -126,6 +149,11 @@ export function EmployeesPage() {
   const [busy, setBusy] = useState(false)
   const [step, setStep] = useState<Step>(1)
   const [createdId, setCreatedId] = useState<string | null>(null)
+  const [compRecordId, setCompRecordId] = useState<string | null>(null)
+  const [statutoryRecordId, setStatutoryRecordId] = useState<string | null>(null)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null)
 
   async function loadLookups() {
     const [b, d, des, emp] = await Promise.all([
@@ -145,7 +173,7 @@ export function EmployeesPage() {
     const { data, error } = await supabase
       .from('employees')
       .select(
-        `id, employee_code, first_name, last_name, full_name, email, phone, cnic, employment_status, is_active,
+        `id, employee_code, first_name, last_name, full_name, email, phone, cnic, employment_status, is_active, photo_url,
          branch_id, department_id, designation_id,
          branches(name), departments(name), designations(title)`
       )
@@ -189,9 +217,38 @@ export function EmployeesPage() {
   const resetWizard = () => {
     setStep(1)
     setCreatedId(null)
+    setCompRecordId(null)
+    setStatutoryRecordId(null)
     setForm(emptyForm)
     setComp(emptyComp)
     setStatutory(emptyStatutory)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setExistingPhotoUrl(null)
+  }
+
+  const activeEmployeeId = editing?.id ?? createdId
+
+  const onPhotoChange = (file: File | null) => {
+    setPhotoFile(file)
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
+    setPhotoPreview(file ? URL.createObjectURL(file) : null)
+  }
+
+  // Upload a photo and return the public URL, or null on failure
+  const uploadPhoto = async (employeeId: string): Promise<string | null> => {
+    if (!photoFile) return null
+    const ext = (photoFile.name.split('.').pop() ?? 'jpg').toLowerCase()
+    const path = `${employeeId}/${Date.now()}.${ext}`
+    const { error } = await supabase.storage
+      .from('employee-photos')
+      .upload(path, photoFile, { upsert: true, contentType: photoFile.type })
+    if (error) {
+      toast.error('Photo upload failed', { description: error.message })
+      return null
+    }
+    const { data } = supabase.storage.from('employee-photos').getPublicUrl(path)
+    return data.publicUrl
   }
 
   const openCreate = async () => {
@@ -208,10 +265,41 @@ export function EmployeesPage() {
     setOpen(true)
   }
 
-  const openEdit = (e: Employee) => {
+  const openEdit = async (e: Employee) => {
     setEditing(e)
     setStep(1)
     setCreatedId(null)
+    setCompRecordId(null)
+    setStatutoryRecordId(null)
+    setPhotoFile(null)
+    setPhotoPreview(null)
+    setExistingPhotoUrl(e.photo_url)
+    setComp(emptyComp)
+    setStatutory(emptyStatutory)
+
+    const [{ data: full }, { data: sal }, { data: stat }] = await Promise.all([
+      supabase
+        .from('employees')
+        .select('*, reports_to_id, gender, date_of_birth, date_of_joining')
+        .eq('id', e.id)
+        .single(),
+      supabase
+        .from('employee_salary_history')
+        .select('*')
+        .eq('employee_id', e.id)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('employee_statutory_enrollment')
+        .select('*')
+        .eq('employee_id', e.id)
+        .order('effective_from', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+
+    const row = (full ?? e) as Record<string, unknown>
     setForm({
       employee_code: e.employee_code,
       first_name: e.first_name,
@@ -219,24 +307,57 @@ export function EmployeesPage() {
       email: e.email ?? '',
       phone: e.phone ?? '',
       cnic: e.cnic ?? '',
-      gender: '',
-      date_of_birth: '',
-      date_of_joining: '',
+      gender: String(row.gender ?? ''),
+      date_of_birth: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : '',
+      date_of_joining: row.date_of_joining ? String(row.date_of_joining).slice(0, 10) : '',
       employment_status: e.employment_status,
       branch_id: e.branch_id ?? '',
       department_id: e.department_id ?? '',
       designation_id: e.designation_id ?? '',
-      reports_to_id: '',
+      reports_to_id: row.reports_to_id ? String(row.reports_to_id) : '',
       is_active: e.is_active,
     })
+
+    if (sal) {
+      setCompRecordId(sal.id)
+      setComp({
+        effective_from: sal.effective_from,
+        basic: +sal.basic,
+        house_rent: +sal.house_rent,
+        medical: +sal.medical,
+        conveyance: +sal.conveyance,
+        utilities: +sal.utilities,
+        other_allowances: +sal.other_allowances,
+        pay_frequency: sal.pay_frequency,
+        currency: sal.currency,
+        revision_reason: sal.revision_reason ?? '',
+      })
+    }
+
+    if (stat) {
+      setStatutoryRecordId(stat.id)
+      setStatutory({
+        effective_from: stat.effective_from,
+        eobi_enabled: stat.eobi_enabled,
+        eobi_custom_amount: stat.eobi_custom_amount?.toString() ?? '',
+        pf_enabled: stat.pf_enabled,
+        pf_employee_pct: stat.pf_employee_pct?.toString() ?? '',
+        pf_employer_pct: stat.pf_employer_pct?.toString() ?? '',
+        social_security_enabled: stat.social_security_enabled,
+        social_security_custom_amount: stat.social_security_custom_amount?.toString() ?? '',
+        income_tax_enabled: stat.income_tax_enabled,
+      })
+    }
+
     setOpen(true)
   }
 
   // STEP 1 — save profile
   const saveProfileStep = async (): Promise<boolean> => {
     if (!appUser) return false
-    if (!form.first_name.trim()) {
-      toast.error('First name is required')
+    const err = validateProfile(form)
+    if (err) {
+      toast.error(err)
       return false
     }
     setBusy(true)
@@ -260,39 +381,59 @@ export function EmployeesPage() {
     }
 
     if (editing) {
-      const { error } = await supabase.from('employees').update(payload).eq('id', editing.id)
+      let nextPhoto: string | null | undefined = undefined
+      if (photoFile) nextPhoto = await uploadPhoto(editing.id)
+      else if (existingPhotoUrl === null) nextPhoto = null // user removed photo
+
+      const { error } = await supabase
+        .from('employees')
+        .update({ ...payload, ...(nextPhoto !== undefined ? { photo_url: nextPhoto } : {}) })
+        .eq('id', editing.id)
       setBusy(false)
       if (error) {
         toast.error('Update failed', { description: error.message })
         return false
       }
       await writeAuditLog({ action: 'UPDATE', entityType: 'employee', entityId: editing.id })
-      toast.success('Employee updated')
-      setOpen(false)
+      toast.success('Profile saved')
       void load()
       return true
     } else {
       const { data, error } = await supabase.from('employees').insert(payload).select('id').single()
-      setBusy(false)
-      if (error) {
-        toast.error('Create failed', { description: error.message })
+      if (error || !data) {
+        setBusy(false)
+        toast.error('Create failed', { description: error?.message })
         return false
       }
-      await writeAuditLog({ action: 'CREATE', entityType: 'employee', entityId: data?.id })
+      // Upload photo if provided, then patch the row
+      if (photoFile) {
+        const photo_url = await uploadPhoto(data.id)
+        if (photo_url) {
+          await supabase.from('employees').update({ photo_url }).eq('id', data.id)
+        }
+      }
+      setBusy(false)
+      await writeAuditLog({ action: 'CREATE', entityType: 'employee', entityId: data.id })
       toast.success('Profile saved')
-      setCreatedId(data?.id ?? null)
+      setCreatedId(data.id)
       void loadLookups()
       return true
     }
   }
 
-  // STEP 2 — save compensation (optional)
+  // STEP 2 — save compensation (required when user has salary permission)
   const saveCompStep = async (): Promise<boolean> => {
-    if (!createdId) return false
-    if (comp.basic <= 0) return true // allow skip with zero basic
+    const empId = activeEmployeeId
+    if (!empId) return false
+    if (!canSetSalary) return true
+    const err = validateComp(comp)
+    if (err) {
+      toast.error(err)
+      return false
+    }
     setBusy(true)
     const payload = {
-      employee_id: createdId,
+      employee_id: empId,
       effective_from: comp.effective_from,
       effective_to: null,
       basic: +comp.basic,
@@ -305,25 +446,38 @@ export function EmployeesPage() {
       currency: comp.currency,
       revision_reason: comp.revision_reason.trim() || null,
     }
-    const { error } = await supabase.from('employee_salary_history').insert(payload)
-    setBusy(false)
-    if (error) {
-      toast.error('Compensation save failed', { description: error.message })
-      return false
+    if (compRecordId) {
+      const { error } = await supabase.from('employee_salary_history').update(payload).eq('id', compRecordId)
+      setBusy(false)
+      if (error) {
+        toast.error('Compensation save failed', { description: error.message })
+        return false
+      }
+      await writeAuditLog({ action: 'UPDATE', entityType: 'employee_salary_history', entityId: compRecordId, after: payload })
+    } else {
+      const { data, error } = await supabase.from('employee_salary_history').insert(payload).select('id').single()
+      setBusy(false)
+      if (error) {
+        toast.error('Compensation save failed', { description: error.message })
+        return false
+      }
+      setCompRecordId(data?.id ?? null)
+      await writeAuditLog({ action: 'CREATE', entityType: 'employee_salary_history', entityId: data?.id, after: payload })
     }
-    toast.success('Compensation recorded')
+    toast.success('Compensation saved')
     return true
   }
 
-  // STEP 3 — save statutory (optional)
+  // STEP 3 — save statutory
   const saveStatutoryStep = async (): Promise<boolean> => {
-    if (!createdId) return false
+    const empId = activeEmployeeId
+    if (!empId) return false
     if (!statutory.eobi_enabled && !statutory.pf_enabled && !statutory.social_security_enabled && !statutory.income_tax_enabled) {
       return true
     }
     setBusy(true)
     const payload = {
-      employee_id: createdId,
+      employee_id: empId,
       effective_from: statutory.effective_from,
       eobi_enabled: statutory.eobi_enabled,
       eobi_custom_amount: statutory.eobi_custom_amount ? +statutory.eobi_custom_amount : null,
@@ -336,11 +490,23 @@ export function EmployeesPage() {
         : null,
       income_tax_enabled: statutory.income_tax_enabled,
     }
-    const { error } = await supabase.from('employee_statutory_enrollment').insert(payload)
-    setBusy(false)
-    if (error) {
-      toast.error('Statutory save failed', { description: error.message })
-      return false
+    if (statutoryRecordId) {
+      const { error } = await supabase.from('employee_statutory_enrollment').update(payload).eq('id', statutoryRecordId)
+      setBusy(false)
+      if (error) {
+        toast.error('Statutory save failed', { description: error.message })
+        return false
+      }
+      await writeAuditLog({ action: 'UPDATE', entityType: 'employee_statutory', entityId: statutoryRecordId, after: payload })
+    } else {
+      const { data, error } = await supabase.from('employee_statutory_enrollment').insert(payload).select('id').single()
+      setBusy(false)
+      if (error) {
+        toast.error('Statutory save failed', { description: error.message })
+        return false
+      }
+      setStatutoryRecordId(data?.id ?? null)
+      await writeAuditLog({ action: 'CREATE', entityType: 'employee_statutory', entityId: data?.id, after: payload })
     }
     toast.success('Statutory enrollment saved')
     return true
@@ -349,7 +515,7 @@ export function EmployeesPage() {
   const goNext = async () => {
     if (step === 1) {
       const ok = await saveProfileStep()
-      if (!ok || editing) return // editing closes the dialog inside saveProfileStep
+      if (!ok) return
       setStep(2)
     } else if (step === 2) {
       const ok = await saveCompStep()
@@ -360,8 +526,10 @@ export function EmployeesPage() {
       if (!ok) return
       setStep(4)
     } else {
-      // Finish
+      toast.success(editing ? 'Employee saved' : 'Employee onboarding complete')
       setOpen(false)
+      setEditing(null)
+      resetWizard()
       void load()
     }
   }
@@ -371,12 +539,62 @@ export function EmployeesPage() {
   }
 
   const goSkip = () => {
-    if (step === 2) setStep(3)
-    else if (step === 3) setStep(4)
+    if (step === 3) setStep(4)
     else if (step === 4) {
       setOpen(false)
       void load()
     }
+  }
+
+  const deactivateEmployee = async (e: Employee) => {
+    setBusy(true)
+    const { error } = await supabase
+      .from('employees')
+      .update({ is_active: false, employment_status: 'Terminated' })
+      .eq('id', e.id)
+    setBusy(false)
+    if (error) {
+      toast.error('Deactivate failed', { description: error.message })
+      return
+    }
+    await writeAuditLog({
+      action: 'UPDATE',
+      entityType: 'employee',
+      entityId: e.id,
+      after: { is_active: false, employment_status: 'Terminated' },
+    })
+    toast.success('Employee deactivated')
+    if (editing?.id === e.id) setOpen(false)
+    void load()
+  }
+
+  const deleteEmployee = async (e: Employee) => {
+    if (
+      !window.confirm(
+        `Delete "${e.full_name}" (${e.employee_code})?\n\nThis permanently removes the employee and related attendance/leave records. If they have payroll, loans, or expenses on file, deletion will be blocked — you can deactivate instead.`
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    const { error } = await supabase.from('employees').delete().eq('id', e.id)
+    setBusy(false)
+    if (error) {
+      const restricted = error.code === '23503' || /foreign key|violates/i.test(error.message)
+      if (restricted) {
+        const deactivate = window.confirm(
+          'This employee has payroll, loan, expense, or letter records and cannot be deleted.\n\nDeactivate instead? (Terminated + inactive)'
+        )
+        if (deactivate) void deactivateEmployee(e)
+      } else {
+        toast.error('Delete failed', { description: error.message })
+      }
+      return
+    }
+    await writeAuditLog({ action: 'DELETE', entityType: 'employee', entityId: e.id })
+    toast.success('Employee deleted')
+    if (editing?.id === e.id) setOpen(false)
+    void load()
   }
 
   const compGross =
@@ -432,6 +650,7 @@ export function EmployeesPage() {
               {filtered.map((e) => (
                 <div key={e.id} className="flex flex-wrap items-center gap-4 px-6 py-4 hover:bg-muted/30">
                   <Avatar className="h-10 w-10">
+                    {e.photo_url && <AvatarImage src={e.photo_url} alt={e.full_name} />}
                     <AvatarFallback className={avatarColorFor(e.employee_code)}>
                       {initialsFromName(e.full_name)}
                     </AvatarFallback>
@@ -447,14 +666,26 @@ export function EmployeesPage() {
                     {e.branches?.name ?? '—'} / {e.departments?.name ?? '—'}
                   </div>
                   <Badge variant={e.employment_status === 'Active' ? 'success' : 'secondary'}>{e.employment_status}</Badge>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     <Button variant="ghost" size="sm" title="Open profile" onClick={() => navigate(`/employees/${e.id}`)}>
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                     {canUpdate && (
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(e)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <>
+                        <Button variant="ghost" size="sm" title="Edit employee" onClick={() => void openEdit(e)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Delete employee"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => void deleteEmployee(e)}
+                          disabled={busy}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -469,7 +700,9 @@ export function EmployeesPage() {
         onOpenChange={(o) => {
           if (!o) {
             setOpen(false)
-            if (!editing) void load()
+            setEditing(null)
+            resetWizard()
+            void load()
           }
         }}
       >
@@ -478,14 +711,13 @@ export function EmployeesPage() {
             <DialogTitle>{editing ? 'Edit employee' : 'New employee — onboarding'}</DialogTitle>
             <DialogDescription>
               {editing
-                ? 'Update profile information for this employee.'
-                : 'Fill out each step. You can skip Compensation, Statutory, or Documents and add them later from the profile.'}
+                ? 'Update profile, compensation, statutory, and documents step by step.'
+                : 'Complete each step. Profile and compensation are required. Statutory and documents can be skipped.'}
             </DialogDescription>
           </DialogHeader>
 
           {/* Stepper */}
-          {!editing && (
-            <div className="flex items-center gap-2 pb-2">
+          <div className="flex items-center gap-2 pb-2">
               {STEP_LABELS.map((s, idx) => {
                 const reached = step >= s.id
                 const done = step > s.id
@@ -514,12 +746,54 @@ export function EmployeesPage() {
                   </div>
                 )
               })}
-            </div>
-          )}
+          </div>
 
           {/* Step 1 — Profile */}
           {step === 1 && (
             <div className="space-y-4">
+              {/* Photo upload */}
+              <div className="flex items-center gap-4 p-4 border rounded-lg bg-muted/20">
+                <Avatar className="h-20 w-20">
+                  {(photoPreview || existingPhotoUrl) && (
+                    <AvatarImage src={(photoPreview || existingPhotoUrl) as string} alt="Employee photo" />
+                  )}
+                  <AvatarFallback className={avatarColorFor(form.employee_code || 'new')}>
+                    {form.first_name || form.last_name
+                      ? initialsFromName(`${form.first_name} ${form.last_name}`.trim())
+                      : '?'}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-2">
+                  <Label className="text-sm">Profile photo</Label>
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border cursor-pointer hover:bg-accent transition-colors">
+                      <Camera className="h-3.5 w-3.5" />
+                      <span>{photoFile || existingPhotoUrl ? 'Change photo' : 'Upload photo'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        className="hidden"
+                        onChange={(e) => onPhotoChange(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    {(photoFile || existingPhotoUrl) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          onPhotoChange(null)
+                          setExistingPhotoUrl(null)
+                        }}
+                      >
+                        <X className="h-3.5 w-3.5" /> Remove
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">JPG, PNG, GIF or WebP. Max 5 MB.</p>
+                </div>
+              </div>
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Employee code</Label>
@@ -529,8 +803,9 @@ export function EmployeesPage() {
                   </p>
                 </div>
                 <div className="space-y-2">
-                  <Label>Status</Label>
+                  <Label>Status *</Label>
                   <Select
+                    required
                     value={form.employment_status}
                     onChange={(e) => setForm({ ...form, employment_status: e.target.value })}
                   >
@@ -550,44 +825,51 @@ export function EmployeesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Last name</Label>
-                  <Input value={form.last_name} onChange={(e) => setForm({ ...form, last_name: e.target.value })} />
+                  <Label>Last name *</Label>
+                  <Input
+                    value={form.last_name}
+                    onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
-                  <Label>CNIC</Label>
+                  <Label>CNIC *</Label>
                   <Input
                     value={form.cnic}
                     onChange={(e) => setForm({ ...form, cnic: e.target.value })}
                     placeholder="35201-1234567-1"
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
-                  <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+                  <Label>Phone *</Label>
+                  <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} required />
                 </div>
                 <div className="space-y-2 sm:col-span-2">
-                  <Label>Email</Label>
-                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+                  <Label>Email *</Label>
+                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                 </div>
                 <div className="space-y-2">
-                  <Label>Date of joining</Label>
+                  <Label>Date of joining *</Label>
                   <Input
                     type="date"
                     value={form.date_of_joining}
                     onChange={(e) => setForm({ ...form, date_of_joining: e.target.value })}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Date of birth</Label>
+                  <Label>Date of birth *</Label>
                   <Input
                     type="date"
                     value={form.date_of_birth}
                     onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Branch</Label>
-                  <Select value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
+                  <Label>Branch *</Label>
+                  <Select required value={form.branch_id} onChange={(e) => setForm({ ...form, branch_id: e.target.value })}>
                     <option value="">Select…</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>
@@ -597,8 +879,8 @@ export function EmployeesPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Department</Label>
-                  <Select value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
+                  <Label>Department *</Label>
+                  <Select required value={form.department_id} onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
                     <option value="">Select…</option>
                     {departments.map((d) => (
                       <option key={d.id} value={d.id}>
@@ -608,8 +890,8 @@ export function EmployeesPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Designation</Label>
-                  <Select value={form.designation_id} onChange={(e) => setForm({ ...form, designation_id: e.target.value })}>
+                  <Label>Designation *</Label>
+                  <Select required value={form.designation_id} onChange={(e) => setForm({ ...form, designation_id: e.target.value })}>
                     <option value="">Select…</option>
                     {designations.map((d) => (
                       <option key={d.id} value={d.id}>
@@ -638,27 +920,29 @@ export function EmployeesPage() {
           )}
 
           {/* Step 2 — Compensation */}
-          {step === 2 && !editing && (
+          {step === 2 && (
             <div className="space-y-4">
               {!canSetSalary && (
                 <div className="text-xs rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 text-amber-900 dark:text-amber-300 p-3">
-                  You don't have <code className="font-mono">payroll.salary</code> permission. You can skip this step;
-                  a payroll administrator can add compensation later.
+                  You don't have <code className="font-mono">payroll.salary</code> permission. Ask a payroll administrator
+                  to add compensation after onboarding.
                 </div>
               )}
               <div className="grid sm:grid-cols-3 gap-4">
                 <div className="space-y-2">
-                  <Label>Effective from</Label>
+                  <Label>Effective from *</Label>
                   <Input
                     type="date"
                     value={comp.effective_from}
                     onChange={(e) => setComp({ ...comp, effective_from: e.target.value })}
                     disabled={!canSetSalary}
+                    required
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Pay frequency</Label>
+                  <Label>Pay frequency *</Label>
                   <Select
+                    required
                     value={comp.pay_frequency}
                     onChange={(e) => setComp({ ...comp, pay_frequency: e.target.value })}
                     disabled={!canSetSalary}
@@ -681,12 +965,12 @@ export function EmployeesPage() {
                 </div>
               </div>
               <div className="grid sm:grid-cols-3 gap-4">
-                <MoneyField label="Basic *" value={comp.basic} onChange={(v) => setComp({ ...comp, basic: v })} disabled={!canSetSalary} />
-                <MoneyField label="House rent" value={comp.house_rent} onChange={(v) => setComp({ ...comp, house_rent: v })} disabled={!canSetSalary} />
-                <MoneyField label="Medical" value={comp.medical} onChange={(v) => setComp({ ...comp, medical: v })} disabled={!canSetSalary} />
-                <MoneyField label="Conveyance" value={comp.conveyance} onChange={(v) => setComp({ ...comp, conveyance: v })} disabled={!canSetSalary} />
-                <MoneyField label="Utilities" value={comp.utilities} onChange={(v) => setComp({ ...comp, utilities: v })} disabled={!canSetSalary} />
-                <MoneyField label="Other allowances" value={comp.other_allowances} onChange={(v) => setComp({ ...comp, other_allowances: v })} disabled={!canSetSalary} />
+                <MoneyField label="Basic *" value={comp.basic} onChange={(v) => setComp({ ...comp, basic: v })} disabled={!canSetSalary} required />
+                <MoneyField label="House rent *" value={comp.house_rent} onChange={(v) => setComp({ ...comp, house_rent: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Medical *" value={comp.medical} onChange={(v) => setComp({ ...comp, medical: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Conveyance *" value={comp.conveyance} onChange={(v) => setComp({ ...comp, conveyance: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Utilities *" value={comp.utilities} onChange={(v) => setComp({ ...comp, utilities: v })} disabled={!canSetSalary} required />
+                <MoneyField label="Other allowances *" value={comp.other_allowances} onChange={(v) => setComp({ ...comp, other_allowances: v })} disabled={!canSetSalary} required />
               </div>
               <div className="flex items-center justify-between p-3 rounded-md bg-primary/5 border border-primary/20 text-sm">
                 <span className="font-medium text-muted-foreground">Gross ({comp.pay_frequency})</span>
@@ -700,14 +984,11 @@ export function EmployeesPage() {
                   disabled={!canSetSalary}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                Leaving Basic at 0 will skip this step — payroll will not generate payslips until a salary is set.
-              </p>
             </div>
           )}
 
           {/* Step 3 — Statutory */}
-          {step === 3 && !editing && (
+          {step === 3 && (
             <div className="space-y-4">
               <div className="space-y-2 max-w-xs">
                 <Label>Effective from</Label>
@@ -808,64 +1089,68 @@ export function EmployeesPage() {
           )}
 
           {/* Step 4 — Documents */}
-          {step === 4 && !editing && createdId && (
+          {step === 4 && activeEmployeeId && (
             <div>
-              <DocumentsTab employeeId={createdId} />
+              <DocumentsTab employeeId={activeEmployeeId} />
             </div>
           )}
 
-          <DialogFooter className="gap-2 pt-2">
-            {editing ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
+          <DialogFooter className="gap-2 pt-2 sm:justify-between flex-wrap">
+            <div>
+              {editing && canDelete && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void deleteEmployee(editing)}
+                  disabled={busy}
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
                 </Button>
-                <Button type="button" onClick={() => void goNext()} disabled={busy}>
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save
+              )}
+            </div>
+            <div className="flex gap-2 ml-auto flex-wrap">
+              <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              {step > 1 && (
+                <Button type="button" variant="ghost" onClick={goBack} disabled={busy}>
+                  <ArrowLeft className="h-4 w-4" /> Back
                 </Button>
-              </>
-            ) : (
-              <>
-                {step > 1 && (
-                  <Button type="button" variant="ghost" onClick={goBack} disabled={busy}>
-                    <ArrowLeft className="h-4 w-4" /> Back
-                  </Button>
-                )}
-                {step > 1 && step < 4 && (
-                  <Button type="button" variant="outline" onClick={goSkip} disabled={busy}>
-                    Skip
-                  </Button>
-                )}
-                {step === 4 && (
-                  <Button type="button" variant="outline" onClick={goSkip} disabled={busy}>
-                    Skip & finish
-                  </Button>
-                )}
-                <Button type="button" onClick={() => void goNext()} disabled={busy}>
-                  {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {step === 1 && (
-                    <>
-                      Save & next <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                  {step === 2 && (
-                    <>
-                      Next <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                  {step === 3 && (
-                    <>
-                      Next <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                  {step === 4 && (
-                    <>
-                      <Check className="h-4 w-4" /> Finish
-                    </>
-                  )}
+              )}
+              {!editing && step > 1 && step < 4 && step !== 2 && (
+                <Button type="button" variant="outline" onClick={goSkip} disabled={busy}>
+                  Skip
                 </Button>
-              </>
-            )}
+              )}
+              {!editing && step === 2 && !canSetSalary && (
+                <Button type="button" variant="outline" onClick={() => setStep(3)} disabled={busy}>
+                  Skip
+                </Button>
+              )}
+              {!editing && step === 4 && (
+                <Button type="button" variant="outline" onClick={goSkip} disabled={busy}>
+                  Skip & finish
+                </Button>
+              )}
+              <Button type="button" onClick={() => void goNext()} disabled={busy}>
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                {step < 4 && (
+                  <>
+                    Next <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+                {step === 4 && editing && (
+                  <>
+                    <Save className="h-4 w-4" /> Save
+                  </>
+                )}
+                {step === 4 && !editing && (
+                  <>
+                    <Check className="h-4 w-4" /> Finish
+                  </>
+                )}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -878,11 +1163,13 @@ function MoneyField({
   value,
   onChange,
   disabled,
+  required,
 }: {
   label: string
   value: number
   onChange: (v: number) => void
   disabled?: boolean
+  required?: boolean
 }) {
   return (
     <div className="space-y-2">
@@ -894,6 +1181,7 @@ function MoneyField({
         value={value}
         onChange={(e) => onChange(+e.target.value || 0)}
         disabled={disabled}
+        required={required}
       />
     </div>
   )

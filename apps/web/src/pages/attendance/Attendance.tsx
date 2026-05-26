@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Plus, RefreshCw, Search, Activity, Calendar, Clock, Save } from 'lucide-react'
+import { Loader2, Plus, RefreshCw, Search, Activity, Calendar, Clock, Pencil } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { writeAuditLog } from '@/lib/audit'
@@ -38,7 +38,19 @@ type Daily = {
   overtime_minutes: number
   is_weekly_off: boolean
   is_holiday: boolean
+  notes?: string | null
   shifts?: { code: string; name: string } | null
+}
+
+const ATTENDANCE_STATUSES = ['Present', 'Late', 'Half Day', 'Absent', 'Leave', 'Holiday', 'Weekly Off']
+
+// Convert a UTC ISO string into the "YYYY-MM-DDTHH:mm" form an <input type=datetime-local> expects.
+const toLocalInput = (iso: string | null): string => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
 type Employee = {
@@ -88,6 +100,22 @@ export function AttendancePage() {
     notes: '',
   })
 
+  const [editOpen, setEditOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<Employee | null>(null)
+  const [editForm, setEditForm] = useState({
+    id: '' as string | null,
+    status: 'Present',
+    first_in: '',
+    last_out: '',
+    worked_minutes: 0,
+    late_minutes: 0,
+    early_out_minutes: 0,
+    overtime_minutes: 0,
+    is_holiday: false,
+    is_weekly_off: false,
+    notes: '',
+  })
+
   async function load() {
     setLoading(true)
     const [emp, br, dp, daily] = await Promise.all([
@@ -101,7 +129,7 @@ export function AttendancePage() {
       supabase
         .from('attendance_daily')
         .select(
-          'id, employee_id, attendance_date, status, first_in, last_out, worked_minutes, late_minutes, early_out_minutes, overtime_minutes, is_weekly_off, is_holiday, shifts(code, name)'
+          'id, employee_id, attendance_date, status, first_in, last_out, worked_minutes, late_minutes, early_out_minutes, overtime_minutes, is_weekly_off, is_holiday, notes, shifts(code, name)'
         )
         .eq('attendance_date', date),
     ])
@@ -175,6 +203,75 @@ export function AttendancePage() {
     const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
     setPunchForm({ employee_id: '', punch_at: local, punch_type: 'in', notes: '' })
     setPunchOpen(true)
+  }
+
+  const openEdit = (emp: Employee) => {
+    const d = byEmployee.get(emp.id)
+    setEditTarget(emp)
+    setEditForm({
+      id: d?.id ?? null,
+      status: d?.status ?? 'Absent',
+      first_in: toLocalInput(d?.first_in ?? null),
+      last_out: toLocalInput(d?.last_out ?? null),
+      worked_minutes: d?.worked_minutes ?? 0,
+      late_minutes: d?.late_minutes ?? 0,
+      early_out_minutes: d?.early_out_minutes ?? 0,
+      overtime_minutes: d?.overtime_minutes ?? 0,
+      is_holiday: d?.is_holiday ?? false,
+      is_weekly_off: d?.is_weekly_off ?? false,
+      notes: d?.notes ?? '',
+    })
+    setEditOpen(true)
+  }
+
+  // Live-derive worked minutes whenever the user changes in/out.
+  const recalcWorkedFromTimes = (first_in: string, last_out: string) => {
+    if (!first_in || !last_out) return 0
+    const a = new Date(first_in).getTime()
+    const b = new Date(last_out).getTime()
+    if (isNaN(a) || isNaN(b) || b <= a) return 0
+    return Math.round((b - a) / 60000)
+  }
+
+  const submitEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!appUser || !editTarget) return
+    setBusy(true)
+    const payload: Record<string, unknown> = {
+      company_id: appUser.company_id,
+      employee_id: editTarget.id,
+      attendance_date: date,
+      status: editForm.status,
+      first_in: editForm.first_in ? new Date(editForm.first_in).toISOString() : null,
+      last_out: editForm.last_out ? new Date(editForm.last_out).toISOString() : null,
+      worked_minutes: Number(editForm.worked_minutes) || 0,
+      late_minutes: Number(editForm.late_minutes) || 0,
+      early_out_minutes: Number(editForm.early_out_minutes) || 0,
+      overtime_minutes: Number(editForm.overtime_minutes) || 0,
+      is_holiday: editForm.is_holiday,
+      is_weekly_off: editForm.is_weekly_off,
+      notes: editForm.notes.trim() || null,
+    }
+    let res
+    if (editForm.id) {
+      res = await supabase.from('attendance_daily').update(payload).eq('id', editForm.id).select('id').single()
+    } else {
+      res = await supabase.from('attendance_daily').insert(payload).select('id').single()
+    }
+    setBusy(false)
+    if (res.error) {
+      toast.error('Could not save attendance', { description: res.error.message })
+      return
+    }
+    await writeAuditLog({
+      action: editForm.id ? 'UPDATE' : 'CREATE',
+      entityType: 'attendance_daily',
+      entityId: res.data?.id,
+      after: payload,
+    })
+    toast.success('Attendance saved')
+    setEditOpen(false)
+    void load()
   }
 
   const submitPunch = async (e: React.FormEvent) => {
@@ -316,6 +413,7 @@ export function AttendancePage() {
                     <th className="px-3 py-3">Worked</th>
                     <th className="px-3 py-3">Late</th>
                     <th className="px-3 py-3">OT</th>
+                    {canUpdate && <th className="px-3 py-3 w-10"></th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -337,8 +435,12 @@ export function AttendancePage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          {d?.shifts?.code ?? '—'}
+                        <td className="px-3 py-3 text-xs">
+                          {d?.shifts?.code ? (
+                            <span className="text-muted-foreground" title={d.shifts.name}>{d.shifts.code}</span>
+                          ) : (
+                            <span className="text-muted-foreground/60 italic">No shift</span>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <Badge variant={statusVariant(status)}>{status}</Badge>
@@ -347,9 +449,31 @@ export function AttendancePage() {
                         <td className="px-3 py-3 tabular-nums">{fmtTime(d?.last_out ?? null)}</td>
                         <td className="px-3 py-3 tabular-nums">{fmtMinutes(d?.worked_minutes ?? 0)}</td>
                         <td className="px-3 py-3 tabular-nums">
-                          {d?.late_minutes ? <span className="text-amber-600 dark:text-amber-400">{fmtMinutes(d.late_minutes)}</span> : '—'}
+                          {d?.late_minutes ? (
+                            <span className="text-amber-600 dark:text-amber-400">{fmtMinutes(d.late_minutes)}</span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
-                        <td className="px-3 py-3 tabular-nums">{fmtMinutes(d?.overtime_minutes ?? 0)}</td>
+                        <td className="px-3 py-3 tabular-nums">
+                          {d?.overtime_minutes ? (
+                            <span className="text-emerald-600 dark:text-emerald-400">{fmtMinutes(d.overtime_minutes)}</span>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        {canUpdate && (
+                          <td className="px-3 py-3">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEdit(e)}
+                              title="Edit attendance"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          </td>
+                        )}
                       </tr>
                     )
                   })}
@@ -359,6 +483,150 @@ export function AttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit attendance</DialogTitle>
+            <DialogDescription>
+              {editTarget?.full_name} ({editTarget?.employee_code}) · {date}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitEdit} className="space-y-4">
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                >
+                  {ATTENDANCE_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Notes</Label>
+                <Input
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                  placeholder="Reason / context"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>First in</Label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.first_in}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setEditForm((f) => ({
+                      ...f,
+                      first_in: v,
+                      worked_minutes: recalcWorkedFromTimes(v, f.last_out) || f.worked_minutes,
+                    }))
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Last out</Label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.last_out}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setEditForm((f) => ({
+                      ...f,
+                      last_out: v,
+                      worked_minutes: recalcWorkedFromTimes(f.first_in, v) || f.worked_minutes,
+                    }))
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Worked (minutes)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.worked_minutes}
+                  onChange={(e) => setEditForm({ ...editForm, worked_minutes: Number(e.target.value) })}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  {fmtMinutes(Number(editForm.worked_minutes) || 0)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Late (minutes)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.late_minutes}
+                  onChange={(e) => setEditForm({ ...editForm, late_minutes: Number(e.target.value) })}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  {fmtMinutes(Number(editForm.late_minutes) || 0)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Early out (minutes)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.early_out_minutes}
+                  onChange={(e) => setEditForm({ ...editForm, early_out_minutes: Number(e.target.value) })}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  {fmtMinutes(Number(editForm.early_out_minutes) || 0)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Overtime (minutes)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={editForm.overtime_minutes}
+                  onChange={(e) => setEditForm({ ...editForm, overtime_minutes: Number(e.target.value) })}
+                />
+                <div className="text-[11px] text-muted-foreground">
+                  {fmtMinutes(Number(editForm.overtime_minutes) || 0)}
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm sm:col-span-1">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={editForm.is_holiday}
+                  onChange={(e) => setEditForm({ ...editForm, is_holiday: e.target.checked })}
+                />
+                Mark as holiday
+              </label>
+              <label className="flex items-center gap-2 text-sm sm:col-span-1">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={editForm.is_weekly_off}
+                  onChange={(e) => setEditForm({ ...editForm, is_weekly_off: e.target.checked })}
+                />
+                Mark as weekly off
+              </label>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Tip: Re-aggregate will overwrite these manual values. Use the notes field to flag overrides.
+            </p>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={punchOpen} onOpenChange={setPunchOpen}>
         <DialogContent>

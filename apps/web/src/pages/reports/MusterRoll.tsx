@@ -1,0 +1,306 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Download, Loader2, Printer, RefreshCw } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { PageHeader } from '@/components/master/PageHeader'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
+import { Card, CardContent } from '@/components/ui/card'
+import { toast } from 'sonner'
+import { downloadCsv } from '@/lib/csv'
+import { FilterBar, ReportBackLink, monthOptions, printableStyles } from './shared'
+
+type Employee = {
+  id: string
+  employee_code: string
+  full_name: string
+  branches: { name: string } | null
+  departments: { name: string } | null
+}
+
+type Daily = {
+  employee_id: string
+  attendance_date: string
+  status: string | null
+  is_weekly_off: boolean | null
+  is_holiday: boolean | null
+  worked_minutes: number | null
+  late_minutes: number | null
+  overtime_minutes: number | null
+}
+
+const codeFor = (d: Daily | undefined): { code: string; cls: string; title: string } => {
+  if (!d) return { code: '·', cls: 'text-slate-300', title: 'No record' }
+  if (d.is_holiday) return { code: 'H', cls: 'bg-orange-100 text-orange-700', title: 'Holiday' }
+  if (d.is_weekly_off) return { code: 'W', cls: 'bg-slate-200 text-slate-700', title: 'Weekly off' }
+  const s = (d.status ?? '').toUpperCase()
+  if (s.includes('PRESENT')) return { code: 'P', cls: 'bg-green-100 text-green-700', title: 'Present' }
+  if (s.includes('LEAVE')) return { code: 'L', cls: 'bg-blue-100 text-blue-700', title: 'Leave' }
+  if (s.includes('ABSENT')) return { code: 'A', cls: 'bg-red-100 text-red-700', title: 'Absent' }
+  if (s.includes('LATE')) return { code: 'LT', cls: 'bg-yellow-100 text-yellow-800', title: 'Late' }
+  if (s.includes('HALF')) return { code: 'HD', cls: 'bg-amber-100 text-amber-800', title: 'Half day' }
+  if (d.worked_minutes && d.worked_minutes > 0) return { code: 'P', cls: 'bg-green-100 text-green-700', title: 'Present' }
+  return { code: '·', cls: 'text-slate-300', title: s || 'No record' }
+}
+
+export function MusterRollPage() {
+  const today = new Date()
+  const [year, setYear] = useState(today.getFullYear())
+  const [month, setMonth] = useState(today.getMonth())
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [daily, setDaily] = useState<Daily[]>([])
+  const [loading, setLoading] = useState(true)
+  const [branchFilter, setBranchFilter] = useState('')
+  const [deptFilter, setDeptFilter] = useState('')
+
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const days = useMemo(() => Array.from({ length: daysInMonth }, (_, i) => i + 1), [daysInMonth])
+
+  async function load() {
+    setLoading(true)
+    const first = `${year}-${String(month + 1).padStart(2, '0')}-01`
+    const last = `${year}-${String(month + 1).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`
+    const [{ data: emps, error: ee }, { data: ad, error: ae }] = await Promise.all([
+      supabase
+        .from('employees')
+        .select('id, employee_code, full_name, branches(name), departments(name)')
+        .eq('is_active', true)
+        .order('full_name'),
+      supabase
+        .from('attendance_daily')
+        .select('employee_id, attendance_date, status, is_weekly_off, is_holiday, worked_minutes, late_minutes, overtime_minutes')
+        .gte('attendance_date', first)
+        .lte('attendance_date', last),
+    ])
+    if (ee || ae) toast.error('Failed to load', { description: ee?.message || ae?.message })
+    setEmployees(
+      ((emps ?? []) as unknown as Record<string, unknown>[]).map((r) => {
+        const pick = (k: string) => {
+          const v = r[k]
+          return Array.isArray(v) ? (v[0] as object | null) : (v as object | null)
+        }
+        return { ...(r as object), branches: pick('branches'), departments: pick('departments') } as Employee
+      })
+    )
+    setDaily((ad ?? []) as Daily[])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    void load()
+  }, [year, month])
+
+  const dailyMap = useMemo(() => {
+    const m = new Map<string, Daily>()
+    daily.forEach((d) => m.set(`${d.employee_id}|${d.attendance_date}`, d))
+    return m
+  }, [daily])
+
+  const branches = useMemo(() => Array.from(new Set(employees.map((e) => e.branches?.name).filter(Boolean) as string[])).sort(), [employees])
+  const departments = useMemo(() => Array.from(new Set(employees.map((e) => e.departments?.name).filter(Boolean) as string[])).sort(), [employees])
+
+  const filteredEmps = useMemo(
+    () =>
+      employees.filter(
+        (e) => (!branchFilter || e.branches?.name === branchFilter) && (!deptFilter || e.departments?.name === deptFilter)
+      ),
+    [employees, branchFilter, deptFilter]
+  )
+
+  const rowTotals = (empId: string) => {
+    let p = 0, a = 0, l = 0, h = 0, w = 0, ot = 0, late = 0
+    for (const d of days) {
+      const k = `${empId}|${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const r = dailyMap.get(k)
+      const c = codeFor(r).code
+      if (c === 'P' || c === 'LT' || c === 'HD') p += 1
+      else if (c === 'A') a += 1
+      else if (c === 'L') l += 1
+      else if (c === 'H') h += 1
+      else if (c === 'W') w += 1
+      if (r) {
+        ot += Number(r.overtime_minutes ?? 0)
+        late += Number(r.late_minutes ?? 0)
+      }
+    }
+    return { p, a, l, h, w, ot: Math.round(ot / 60 * 100) / 100, late }
+  }
+
+  function exportCsv() {
+    const monthLabel = monthOptions[month].l
+    const headers = ['Code', 'Name', 'Branch', 'Department', ...days.map(String), 'P', 'A', 'L', 'H', 'W', 'OT (hrs)', 'Late (min)']
+    const lines = [headers.join(',')]
+    filteredEmps.forEach((e) => {
+      const totals = rowTotals(e.id)
+      const cells = days.map((d) => {
+        const k = `${e.id}|${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+        return codeFor(dailyMap.get(k)).code
+      })
+      const row = [
+        e.employee_code,
+        `"${e.full_name.replace(/"/g, '""')}"`,
+        `"${(e.branches?.name ?? '').replace(/"/g, '""')}"`,
+        `"${(e.departments?.name ?? '').replace(/"/g, '""')}"`,
+        ...cells,
+        totals.p,
+        totals.a,
+        totals.l,
+        totals.h,
+        totals.w,
+        totals.ot,
+        totals.late,
+      ]
+      lines.push(row.join(','))
+    })
+    downloadCsv(`muster-roll-${monthLabel}-${year}.csv`, lines.join('\r\n'))
+  }
+
+  return (
+    <div className="space-y-4">
+      <ReportBackLink />
+      <PageHeader
+        title="Muster roll"
+        description="Day-by-day attendance status for the selected month."
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" /> Print
+            </Button>
+            <Button size="sm" onClick={exportCsv} disabled={filteredEmps.length === 0}>
+              <Download className="h-4 w-4" /> CSV
+            </Button>
+          </>
+        }
+      />
+
+      <FilterBar>
+        <div className="min-w-[140px]">
+          <Label className="text-xs">Year</Label>
+          <Select value={year} onChange={(e) => setYear(parseInt(e.target.value, 10))}>
+            {Array.from({ length: 6 }, (_, i) => today.getFullYear() - 3 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="min-w-[140px]">
+          <Label className="text-xs">Month</Label>
+          <Select value={month} onChange={(e) => setMonth(parseInt(e.target.value, 10))}>
+            {monthOptions.map((m) => (
+              <option key={m.v} value={m.v}>
+                {m.l}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="min-w-[160px]">
+          <Label className="text-xs">Branch</Label>
+          <Select value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
+            <option value="">All branches</option>
+            {branches.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="min-w-[160px]">
+          <Label className="text-xs">Department</Label>
+          <Select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+            <option value="">All departments</option>
+            {departments.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="ml-auto text-xs text-muted-foreground">
+          Legend: <span className="font-mono">P</span> Present · <span className="font-mono">A</span> Absent ·{' '}
+          <span className="font-mono">L</span> Leave · <span className="font-mono">H</span> Holiday ·{' '}
+          <span className="font-mono">W</span> Weekly off
+        </div>
+      </FilterBar>
+
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          {loading ? (
+            <div className="p-12 grid place-items-center">
+              <Loader2 className="h-5 w-5 animate-spin" />
+            </div>
+          ) : (
+            <table className="w-full text-xs report-table">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th className="text-left px-2 py-2 sticky left-0 bg-muted/80 z-10">Code</th>
+                  <th className="text-left px-2 py-2 sticky left-[60px] bg-muted/80 z-10">Name</th>
+                  {days.map((d) => {
+                    const dow = new Date(year, month, d).getDay()
+                    return (
+                      <th
+                        key={d}
+                        className={
+                          'text-center px-1 py-2 ' +
+                          (dow === 0 || dow === 6 ? 'bg-slate-200/60 dark:bg-slate-700/30' : '')
+                        }
+                      >
+                        {d}
+                      </th>
+                    )
+                  })}
+                  <th className="text-center px-2 py-2 bg-green-50 dark:bg-green-950/30">P</th>
+                  <th className="text-center px-2 py-2 bg-red-50 dark:bg-red-950/30">A</th>
+                  <th className="text-center px-2 py-2 bg-blue-50 dark:bg-blue-950/30">L</th>
+                  <th className="text-center px-2 py-2 bg-orange-50 dark:bg-orange-950/30">H</th>
+                  <th className="text-center px-2 py-2 bg-slate-100 dark:bg-slate-800/30">W</th>
+                  <th className="text-center px-2 py-2">OT</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredEmps.map((e) => {
+                  const totals = rowTotals(e.id)
+                  return (
+                    <tr key={e.id} className="hover:bg-muted/30">
+                      <td className="px-2 py-1.5 font-mono sticky left-0 bg-card z-[1]">{e.employee_code}</td>
+                      <td className="px-2 py-1.5 sticky left-[60px] bg-card z-[1] whitespace-nowrap">{e.full_name}</td>
+                      {days.map((d) => {
+                        const k = `${e.id}|${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+                        const c = codeFor(dailyMap.get(k))
+                        return (
+                          <td key={d} className="px-1 py-1.5 text-center" title={c.title}>
+                            <span className={`inline-block min-w-[18px] text-[10px] font-semibold px-1 rounded ${c.cls}`}>
+                              {c.code}
+                            </span>
+                          </td>
+                        )
+                      })}
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.p}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.a}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.l}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.h}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.w}</td>
+                      <td className="px-2 py-1.5 text-center font-semibold tabular-nums">{totals.ot}</td>
+                    </tr>
+                  )
+                })}
+                {filteredEmps.length === 0 && (
+                  <tr>
+                    <td colSpan={days.length + 8} className="px-4 py-12 text-center text-muted-foreground">
+                      No employees match the current filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      <style>{printableStyles}</style>
+    </div>
+  )
+}

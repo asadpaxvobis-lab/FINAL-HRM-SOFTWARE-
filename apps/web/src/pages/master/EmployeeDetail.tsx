@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, Save } from 'lucide-react'
+import { ArrowLeft, Loader2, Save, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { writeAuditLog } from '@/lib/audit'
@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { avatarColorFor, initialsFromName } from '@/lib/utils'
 import { toast } from 'sonner'
 import { ShiftAssignmentTab } from '@/components/employee/ShiftAssignmentTab'
@@ -47,6 +47,7 @@ export function EmployeeDetailPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
   const canUpdate = hasPermission('employee.update')
+  const canDelete = hasPermission('employee.delete')
   type Tab = 'profile' | 'statutory' | 'shifts' | 'compensation' | 'documents'
   const [tab, setTab] = useState<Tab>('profile')
   const [loading, setLoading] = useState(true)
@@ -97,6 +98,56 @@ export function EmployeeDetailPage() {
     })()
   }, [id, navigate])
 
+  const deleteEmployee = async () => {
+    if (!id || !employee) return
+    const fullName = String(employee.full_name ?? '')
+    const code = String(employee.employee_code ?? '')
+    if (
+      !window.confirm(
+        `Delete "${fullName}" (${code})?\n\nThis permanently removes the employee. If they have payroll, loans, or expenses on file, deletion will be blocked — you can deactivate instead.`
+      )
+    ) {
+      return
+    }
+    setSaving(true)
+    const { error } = await supabase.from('employees').delete().eq('id', id)
+    setSaving(false)
+    if (error) {
+      const restricted = error.code === '23503' || /foreign key|violates/i.test(error.message)
+      if (restricted) {
+        const deactivate = window.confirm(
+          'This employee has linked payroll, loan, expense, or letter records and cannot be deleted.\n\nDeactivate instead? (Terminated + inactive)'
+        )
+        if (deactivate) {
+          setSaving(true)
+          const { error: deactErr } = await supabase
+            .from('employees')
+            .update({ is_active: false, employment_status: 'Terminated' })
+            .eq('id', id)
+          setSaving(false)
+          if (deactErr) {
+            toast.error('Deactivate failed', { description: deactErr.message })
+            return
+          }
+          await writeAuditLog({
+            action: 'UPDATE',
+            entityType: 'employee',
+            entityId: id,
+            after: { is_active: false, employment_status: 'Terminated' },
+          })
+          toast.success('Employee deactivated')
+          navigate('/employees')
+        }
+      } else {
+        toast.error('Delete failed', { description: error.message })
+      }
+      return
+    }
+    await writeAuditLog({ action: 'DELETE', entityType: 'employee', entityId: id })
+    toast.success('Employee deleted')
+    navigate('/employees')
+  }
+
   const saveStatutory = async () => {
     if (!id || !canUpdate) return
     setSaving(true)
@@ -144,17 +195,26 @@ export function EmployeeDetailPage() {
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex items-center gap-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/employees')}>
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
         <Avatar className="h-12 w-12">
+          {employee.photo_url ? (
+            <AvatarImage src={employee.photo_url as string} alt={fullName} />
+          ) : null}
           <AvatarFallback className={avatarColorFor(code)}>{initialsFromName(fullName)}</AvatarFallback>
         </Avatar>
-        <div>
+        <div className="flex-1 min-w-[160px]">
           <h2 className="text-xl font-semibold">{fullName}</h2>
           <p className="text-sm text-muted-foreground">{code}</p>
         </div>
+        {canDelete && (
+          <Button variant="destructive" size="sm" onClick={() => void deleteEmployee()} disabled={saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Delete
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-1 border-b overflow-x-auto">
