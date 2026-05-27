@@ -76,7 +76,7 @@ const quickActions: { heading: string; items: QuickAction[] }[] = [
     items: [
       { label: 'Holidays', description: 'Calendar and branch exclusions', to: '/holidays', icon: CalendarRange, perm: 'holiday.view', tone: 'rose' },
       { label: 'Shifts', description: 'Define work schedules', to: '/shifts', icon: Timer, perm: 'shift.view', tone: 'amber' },
-      { label: 'Roster', description: 'Assign shifts in bulk', to: '/roster', icon: ClipboardList, perm: 'shift.view', tone: 'green' },
+      { label: 'Bulk Shift Assign', description: 'Assign shifts in bulk', to: '/roster', icon: ClipboardList, perm: 'shift.view', tone: 'green' },
       { label: 'Attendance', description: 'Daily attendance and punches', to: '/attendance', icon: Clock, perm: 'attendance.view', tone: 'blue' },
       { label: 'Corrections', description: 'Approve missing punch requests', to: '/attendance/corrections', icon: FileQuestion, perm: 'attendance.view', tone: 'orange' },
       { label: 'Overtime', description: 'OT requests, approvals, payouts', to: '/overtime', icon: Clock, perm: 'overtime.view', tone: 'purple' },

@@ -11,12 +11,35 @@ export const DEFAULT_SHIFT = {
 }
 
 const STANDARD_DAY_MINUTES = 8 * 60
+/** Pakistan default; matches companies.timezone seed (Asia/Karachi, UTC+5, no DST). */
+const COMPANY_TZ_OFFSET_MINUTES = 5 * 60
+
+function parseShiftTime(timeStr: string): [number, number] {
+  const [h, m] = timeStr.split(':').map(Number)
+  return [h ?? 0, m ?? 0]
+}
 
 function combineDateTime(dateStr: string, timeStr: string): Date {
-  const [h, m] = timeStr.split(':').map(Number)
-  const d = new Date(`${dateStr}T00:00:00`)
-  d.setHours(h, m, 0, 0)
-  return d
+  const [h, m] = parseShiftTime(timeStr)
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  // Wall-clock time in company TZ → UTC instant (same as Postgres timezone('Asia/Karachi', ...))
+  return new Date(Date.UTC(y, mo - 1, d, h, m, 0) - COMPANY_TZ_OFFSET_MINUTES * 60_000)
+}
+
+function normalizeShift(shift?: ShiftLike | null): ShiftLike {
+  const start = shift?.start_time != null ? String(shift.start_time) : ''
+  const end = shift?.end_time != null ? String(shift.end_time) : ''
+  if (!start || !end) return DEFAULT_SHIFT
+  return {
+    ...shift,
+    start_time: start.slice(0, 5),
+    end_time: end.slice(0, 5),
+  }
+}
+
+export function formatShiftWindow(shift?: ShiftLike | null): string {
+  const s = normalizeShift(shift)
+  return `${s.start_time} – ${s.end_time} (grace late ${s.grace_late_minutes ?? 15}m)`
 }
 
 function diffMinutes(a: Date, b: Date): number {
@@ -40,8 +63,14 @@ export function computeAttendanceMetrics(
   shift?: ShiftLike | null,
   scheduled_start?: string | null,
   scheduled_end?: string | null
-): { worked_minutes: number; late_minutes: number; early_out_minutes: number; overtime_minutes: number } {
-  const cfg = shift?.start_time && shift?.end_time ? shift : DEFAULT_SHIFT
+): {
+  worked_minutes: number
+  late_minutes: number
+  early_out_minutes: number
+  overtime_minutes: number
+  gross_overtime_minutes: number
+} {
+  const cfg = normalizeShift(shift)
   const firstIn = first_in ? new Date(first_in) : null
   const lastOut = last_out ? new Date(last_out) : null
 
@@ -60,7 +89,7 @@ export function computeAttendanceMetrics(
 
   let late_minutes = 0
   let early_out_minutes = 0
-  let overtime_minutes = 0
+  let gross_overtime_minutes = 0
 
   if (firstIn && scheduledStart) {
     const lateRaw = diffMinutes(scheduledStart, firstIn)
@@ -71,13 +100,31 @@ export function computeAttendanceMetrics(
       const earlyRaw = diffMinutes(lastOut, scheduledEnd)
       early_out_minutes = Math.max(0, earlyRaw - (cfg.grace_early_minutes ?? 0))
     } else if (lastOut > scheduledEnd) {
-      overtime_minutes = diffMinutes(scheduledEnd, lastOut)
+      gross_overtime_minutes = diffMinutes(scheduledEnd, lastOut)
     }
   } else if (worked_minutes > 0) {
-    overtime_minutes = Math.max(0, worked_minutes - STANDARD_DAY_MINUTES)
+    gross_overtime_minutes = Math.max(0, worked_minutes - STANDARD_DAY_MINUTES)
   }
 
-  return { worked_minutes, late_minutes, early_out_minutes, overtime_minutes }
+  const overtime_minutes = overtimeAfterLate(gross_overtime_minutes, late_minutes)
+
+  return { worked_minutes, late_minutes, early_out_minutes, overtime_minutes, gross_overtime_minutes }
+}
+
+/** Overtime shown/saved on working days = time after shift end minus late minutes. */
+export function overtimeAfterLate(overtimeMinutes: number, lateMinutes: number): number {
+  if (lateMinutes <= 0 || overtimeMinutes <= 0) return overtimeMinutes
+  return Math.max(0, overtimeMinutes - lateMinutes)
+}
+
+/** Net OT for grid / forms (uses gross when available, else stored OT). */
+export function displayOvertimeMinutes(metrics: {
+  overtime_minutes: number
+  late_minutes: number
+  gross_overtime_minutes?: number
+}): number {
+  const gross = metrics.gross_overtime_minutes ?? metrics.overtime_minutes
+  return overtimeAfterLate(gross, metrics.late_minutes)
 }
 
 export type DailyComputed = {
@@ -109,6 +156,70 @@ export async function recomputeAttendanceDaily(companyId: string, dateStr: strin
   })
   if (error) throw error
   return { rows: (data as number) ?? 0 }
+}
+
+/** Parse `<input type="datetime-local">` value as company wall-clock (Asia/Karachi). */
+export function localDatetimeInputToIso(local: string): string | null {
+  const match = local?.trim().match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})/)
+  if (!match) return null
+  const datePart = match[1]
+  const y = Number(datePart.slice(0, 4))
+  const mo = Number(datePart.slice(5, 7))
+  const d = Number(datePart.slice(8, 10))
+  const h = Number(match[2])
+  const m = Number(match[3])
+  if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(m)) return null
+  return new Date(Date.UTC(y, mo - 1, d, h, m, 0) - COMPANY_TZ_OFFSET_MINUTES * 60_000).toISOString()
+}
+
+export function isCompleteDatetimeLocal(local: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local.trim())
+}
+
+/** Format UTC ISO for datetime-local input (company wall-clock). */
+export function isoToLocalDatetimeInput(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ''
+  const pk = new Date(d.getTime() + COMPANY_TZ_OFFSET_MINUTES * 60_000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pk.getUTCFullYear()}-${pad(pk.getUTCMonth() + 1)}-${pad(pk.getUTCDate())}T${pad(pk.getUTCHours())}:${pad(pk.getUTCMinutes())}`
+}
+
+/** Date from datetime-local input, else attendance row date. */
+export function dateFromEditInputs(firstInLocal: string, lastOutLocal: string, fallbackDate: string): string {
+  const fromIn = firstInLocal.trim().split('T')[0]
+  if (fromIn && /^\d{4}-\d{2}-\d{2}$/.test(fromIn)) return fromIn
+  const fromOut = lastOutLocal.trim().split('T')[0]
+  if (fromOut && /^\d{4}-\d{2}-\d{2}$/.test(fromOut)) return fromOut
+  return fallbackDate
+}
+
+/** Auto-fill worked / late / early-out / OT in the edit-attendance form. */
+export function metricsFromEditTimes(
+  fallbackDate: string,
+  firstInLocal: string,
+  lastOutLocal: string,
+  shift?: ShiftLike | null
+) {
+  if (!firstInLocal.trim()) {
+    return { worked_minutes: 0, late_minutes: 0, early_out_minutes: 0, overtime_minutes: 0 }
+  }
+  const attendanceDate = dateFromEditInputs(firstInLocal, lastOutLocal, fallbackDate)
+  const m = computeAttendanceMetrics(
+    attendanceDate,
+    localDatetimeInputToIso(firstInLocal),
+    localDatetimeInputToIso(lastOutLocal),
+    shift,
+    null,
+    null
+  )
+  return {
+    worked_minutes: m.worked_minutes,
+    late_minutes: m.late_minutes,
+    early_out_minutes: m.early_out_minutes,
+    overtime_minutes: m.overtime_minutes,
+  }
 }
 
 export function fmtMinutes(mins: number, alwaysShow = false): string {

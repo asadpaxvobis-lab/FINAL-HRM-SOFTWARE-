@@ -27,6 +27,7 @@ import {
 import { avatarColorFor, cn, initialsFromName } from '@/lib/utils'
 import { toast } from 'sonner'
 import { DocumentsTab } from '@/components/employee/DocumentsTab'
+import { DeleteEmployeeDialog } from '@/components/employee/DeleteEmployeeDialog'
 
 type Lookup = { id: string; name?: string; title?: string; code?: string }
 
@@ -115,9 +116,6 @@ function validateProfile(form: typeof emptyForm): string | null {
   if (!form.first_name.trim()) return 'First name is required'
   if (!form.last_name.trim()) return 'Last name is required'
   if (!form.cnic.trim()) return 'CNIC is required'
-  if (!form.phone.trim()) return 'Phone is required'
-  if (!form.email.trim()) return 'Email is required'
-  if (!form.date_of_birth) return 'Date of birth is required'
   return null
 }
 
@@ -148,6 +146,7 @@ export function EmployeesPage() {
   const [comp, setComp] = useState(emptyComp)
   const [statutory, setStatutory] = useState(emptyStatutory)
   const [busy, setBusy] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null)
   const [step, setStep] = useState<Step>(1)
   const [createdId, setCreatedId] = useState<string | null>(null)
   const [compRecordId, setCompRecordId] = useState<string | null>(null)
@@ -549,57 +548,6 @@ export function EmployeesPage() {
     }
   }
 
-  const deactivateEmployee = async (e: Employee) => {
-    setBusy(true)
-    const { error } = await supabase
-      .from('employees')
-      .update({ is_active: false, employment_status: 'Terminated' })
-      .eq('id', e.id)
-    setBusy(false)
-    if (error) {
-      toast.error('Deactivate failed', { description: error.message })
-      return
-    }
-    await writeAuditLog({
-      action: 'UPDATE',
-      entityType: 'employee',
-      entityId: e.id,
-      after: { is_active: false, employment_status: 'Terminated' },
-    })
-    toast.success('Employee deactivated')
-    if (editing?.id === e.id) setOpen(false)
-    void load()
-  }
-
-  const deleteEmployee = async (e: Employee) => {
-    if (
-      !window.confirm(
-        `Delete "${e.full_name}" (${e.employee_code})?\n\nThis permanently removes the employee and related attendance/leave records. If they have payroll, loans, or expenses on file, deletion will be blocked — you can deactivate instead.`
-      )
-    ) {
-      return
-    }
-    setBusy(true)
-    const { error } = await supabase.from('employees').delete().eq('id', e.id)
-    setBusy(false)
-    if (error) {
-      const restricted = error.code === '23503' || /foreign key|violates/i.test(error.message)
-      if (restricted) {
-        const deactivate = window.confirm(
-          'This employee has payroll, loan, expense, or letter records and cannot be deleted.\n\nDeactivate instead? (Terminated + inactive)'
-        )
-        if (deactivate) void deactivateEmployee(e)
-      } else {
-        toast.error('Delete failed', { description: error.message })
-      }
-      return
-    }
-    await writeAuditLog({ action: 'DELETE', entityType: 'employee', entityId: e.id })
-    toast.success('Employee deleted')
-    if (editing?.id === e.id) setOpen(false)
-    void load()
-  }
-
   const compGross =
     +comp.basic + +comp.house_rent + +comp.medical + +comp.conveyance + +comp.utilities + +comp.other_allowances
 
@@ -674,21 +622,21 @@ export function EmployeesPage() {
                       <ChevronRight className="h-4 w-4" />
                     </Button>
                     {canUpdate && (
-                      <>
-                        <Button variant="ghost" size="sm" title="Edit employee" onClick={() => void openEdit(e)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          title="Delete employee"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => void deleteEmployee(e)}
-                          disabled={busy}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </>
+                      <Button variant="ghost" size="sm" title="Edit employee" onClick={() => void openEdit(e)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete employee"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setDeleteTarget(e)}
+                        disabled={busy}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -913,32 +861,29 @@ export function EmployeesPage() {
                     className={requiredInputClass}
                   />
                 </RequiredField>
-                <RequiredField label="Phone">
+                <div className="space-y-2">
+                  <Label>Phone</Label>
                   <Input
                     value={form.phone}
                     onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    required
-                    className={requiredInputClass}
                   />
-                </RequiredField>
-                <RequiredField label="Email" span="full">
+                </div>
+                <div className="space-y-2 sm:col-span-2">
+                  <Label>Email</Label>
                   <Input
                     type="email"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    required
-                    className={requiredInputClass}
                   />
-                </RequiredField>
-                <RequiredField label="Date of birth">
+                </div>
+                <div className="space-y-2">
+                  <Label>Date of birth</Label>
                   <Input
                     type="date"
                     value={form.date_of_birth}
                     onChange={(e) => setForm({ ...form, date_of_birth: e.target.value })}
-                    required
-                    className={requiredInputClass}
                   />
-                </RequiredField>
+                </div>
                 <div className="space-y-2">
                   <Label>Device PIN (ZKTeco)</Label>
                   <Input
@@ -1159,7 +1104,7 @@ export function EmployeesPage() {
                 <Button
                   type="button"
                   variant="destructive"
-                  onClick={() => void deleteEmployee(editing)}
+                  onClick={() => setDeleteTarget(editing)}
                   disabled={busy}
                 >
                   <Trash2 className="h-4 w-4" /> Delete
@@ -1217,6 +1162,25 @@ export function EmployeesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteEmployeeDialog
+        employee={
+          deleteTarget
+            ? {
+                id: deleteTarget.id,
+                full_name: deleteTarget.full_name,
+                employee_code: deleteTarget.employee_code,
+              }
+            : null
+        }
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onDeleted={() => {
+          const deletedId = deleteTarget?.id
+          setDeleteTarget(null)
+          if (editing?.id === deletedId) setOpen(false)
+          void load()
+        }}
+      />
     </div>
   )
 }

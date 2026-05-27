@@ -43,7 +43,7 @@ const navSections: NavSection[] = [
   {
     heading: 'Time & Attendance',
     items: [
-      { label: 'Roster', to: '/roster', perm: 'shift.view' },
+      { label: 'Bulk Shift Assign', to: '/roster', perm: 'shift.view' },
       { label: 'Attendance', to: '/attendance', perm: 'attendance.view' },
       { label: 'Corrections', to: '/attendance/corrections', perm: 'attendance.view' },
       { label: 'Overtime', to: '/overtime', perm: 'overtime.view' },

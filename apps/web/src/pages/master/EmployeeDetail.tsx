@@ -17,6 +17,7 @@ import { ShiftAssignmentTab } from '@/components/employee/ShiftAssignmentTab'
 import { CompensationTab } from '@/components/employee/CompensationTab'
 import { DocumentsTab } from '@/components/employee/DocumentsTab'
 import { BankTab } from '@/components/employee/BankTab'
+import { DeleteEmployeeDialog } from '@/components/employee/DeleteEmployeeDialog'
 
 type Statutory = {
   id?: string
@@ -55,6 +56,7 @@ export function EmployeeDetailPage() {
   const [employee, setEmployee] = useState<Record<string, unknown> | null>(null)
   const [statutory, setStatutory] = useState<Statutory>(defaultStatutory())
   const [saving, setSaving] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -98,56 +100,6 @@ export function EmployeeDetailPage() {
       setLoading(false)
     })()
   }, [id, navigate])
-
-  const deleteEmployee = async () => {
-    if (!id || !employee) return
-    const fullName = String(employee.full_name ?? '')
-    const code = String(employee.employee_code ?? '')
-    if (
-      !window.confirm(
-        `Delete "${fullName}" (${code})?\n\nThis permanently removes the employee. If they have payroll, loans, or expenses on file, deletion will be blocked — you can deactivate instead.`
-      )
-    ) {
-      return
-    }
-    setSaving(true)
-    const { error } = await supabase.from('employees').delete().eq('id', id)
-    setSaving(false)
-    if (error) {
-      const restricted = error.code === '23503' || /foreign key|violates/i.test(error.message)
-      if (restricted) {
-        const deactivate = window.confirm(
-          'This employee has linked payroll, loan, expense, or letter records and cannot be deleted.\n\nDeactivate instead? (Terminated + inactive)'
-        )
-        if (deactivate) {
-          setSaving(true)
-          const { error: deactErr } = await supabase
-            .from('employees')
-            .update({ is_active: false, employment_status: 'Terminated' })
-            .eq('id', id)
-          setSaving(false)
-          if (deactErr) {
-            toast.error('Deactivate failed', { description: deactErr.message })
-            return
-          }
-          await writeAuditLog({
-            action: 'UPDATE',
-            entityType: 'employee',
-            entityId: id,
-            after: { is_active: false, employment_status: 'Terminated' },
-          })
-          toast.success('Employee deactivated')
-          navigate('/employees')
-        }
-      } else {
-        toast.error('Delete failed', { description: error.message })
-      }
-      return
-    }
-    await writeAuditLog({ action: 'DELETE', entityType: 'employee', entityId: id })
-    toast.success('Employee deleted')
-    navigate('/employees')
-  }
 
   const saveStatutory = async () => {
     if (!id || !canUpdate) return
@@ -211,8 +163,8 @@ export function EmployeeDetailPage() {
           <p className="text-sm text-muted-foreground">{code}</p>
         </div>
         {canDelete && (
-          <Button variant="destructive" size="sm" onClick={() => void deleteEmployee()} disabled={saving}>
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)} disabled={saving}>
+            <Trash2 className="h-4 w-4" />
             Delete
           </Button>
         )}
@@ -398,6 +350,23 @@ export function EmployeeDetailPage() {
       {tab === 'compensation' && id && <CompensationTab employeeId={id} />}
       {tab === 'bank' && id && <BankTab employeeId={id} employeeName={fullName} />}
       {tab === 'documents' && id && <DocumentsTab employeeId={id} />}
+
+      <DeleteEmployeeDialog
+        employee={
+          deleteOpen && id && employee
+            ? {
+                id,
+                full_name: String(employee.full_name ?? ''),
+                employee_code: String(employee.employee_code ?? ''),
+              }
+            : null
+        }
+        onOpenChange={setDeleteOpen}
+        onDeleted={() => {
+          setDeleteOpen(false)
+          navigate('/employees')
+        }}
+      />
     </div>
   )
 }

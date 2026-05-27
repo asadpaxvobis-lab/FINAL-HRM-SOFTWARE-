@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, RefreshCw, KeyRound, ShieldOff, ShieldCheck, Loader2, Search, UserPlus, AlertCircle } from 'lucide-react'
+import { Plus, RefreshCw, KeyRound, ShieldOff, ShieldCheck, Loader2, Search, UserPlus, AlertCircle, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -27,6 +27,7 @@ import { HasPermission } from '@/components/HasPermission'
 import { avatarColorFor, initialsFromName, formatRelative } from '@/lib/utils'
 import { toast } from 'sonner'
 import { createUserViaAdmin } from '@/lib/createUser'
+import { deleteUserViaAdmin } from '@/lib/deleteUser'
 import { writeAuditLog } from '@/lib/audit'
 
 type UserRow = {
@@ -43,19 +44,20 @@ type UserRow = {
 type RoleOption = { id: string; name: string; description: string | null }
 
 export function UsersPage() {
-  const { hasPermission } = useAuth()
+  const { hasPermission, appUser } = useAuth()
   const [users, setUsers] = useState<UserRow[]>([])
   const [roles, setRoles] = useState<RoleOption[]>([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<UserRow | null>(null)
 
   async function load() {
     setLoading(true)
     const [usersRes, rolesRes] = await Promise.all([
       supabase
         .from('users')
-        .select('id, email, full_name, status, force_password_change, last_login_at, created_at, user_roles(roles(id,name))')
+        .select('id, email, full_name, status, force_password_change, last_login_at, created_at, user_roles!user_id(roles(id,name))')
         .order('created_at', { ascending: false }),
       supabase.from('roles').select('id, name, description').order('name'),
     ])
@@ -225,6 +227,18 @@ export function UsersPage() {
                         <KeyRound className="h-4 w-4" />
                       </Button>
                     </HasPermission>
+                    <HasPermission perm="user.delete">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Delete user"
+                        className="text-destructive hover:text-destructive"
+                        disabled={appUser?.id === u.id}
+                        onClick={() => setDeleteTarget(u)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </HasPermission>
                   </div>
                 </div>
               ))}
@@ -238,6 +252,15 @@ export function UsersPage() {
         onOpenChange={setCreateOpen}
         roles={roles}
         onCreated={() => void load()}
+      />
+
+      <DeleteUserDialog
+        user={deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        onDeleted={() => {
+          setDeleteTarget(null)
+          void load()
+        }}
       />
     </div>
   )
@@ -257,6 +280,61 @@ function EmptyState({ onCreate, canCreate }: { onCreate: () => void; canCreate: 
         </Button>
       )}
     </div>
+  )
+}
+
+function DeleteUserDialog({
+  user,
+  onOpenChange,
+  onDeleted,
+}: {
+  user: UserRow | null
+  onOpenChange: (open: boolean) => void
+  onDeleted: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const label = user ? (user.full_name?.trim() || user.email) : ''
+  const open = user !== null
+
+  const onConfirm = async () => {
+    if (!user) return
+    setBusy(true)
+    try {
+      const { error } = await deleteUserViaAdmin(user.id)
+      if (error) {
+        toast.error('Could not delete user', { description: error })
+        return
+      }
+      await writeAuditLog({ action: 'DELETE', entityType: 'user', entityId: user.id })
+      toast.success('User deleted')
+      onDeleted()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Delete user?</DialogTitle>
+          <DialogDescription>
+            This will permanently remove <span className="font-medium text-foreground">{label}</span> (
+            {user?.email}). They will no longer be able to sign in. This cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" disabled={busy} onClick={() => void onConfirm()}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Delete user
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

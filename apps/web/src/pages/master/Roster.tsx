@@ -222,7 +222,7 @@ export function RosterPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Roster"
+        title="Bulk Shift Assign"
         description="Current shift assignment for every active employee. Multi-select to assign a shift in bulk."
         actions={
           <>
