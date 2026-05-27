@@ -149,6 +149,35 @@ export type DailyComputed = {
  * Recompute attendance_daily via Postgres (recompute_attendance_daily RPC).
  * Punch inserts also auto-reaggregate via DB trigger.
  */
+export async function saveManualAttendanceDay(params: {
+  employeeId: string
+  date: string
+  firstInIso: string | null
+  lastOutIso: string | null
+  status: string
+  notes?: string | null
+  isHoliday?: boolean
+  isWeeklyOff?: boolean
+}): Promise<{ dailyId?: string; error?: string }> {
+  const attendanceDate = dateFromEditInputs(
+    params.firstInIso ? isoToLocalDatetimeInput(params.firstInIso) : '',
+    params.lastOutIso ? isoToLocalDatetimeInput(params.lastOutIso) : '',
+    params.date
+  )
+  const { data, error } = await supabase.rpc('set_manual_attendance_day', {
+    p_employee_id: params.employeeId,
+    p_date: attendanceDate,
+    p_first_in: params.firstInIso,
+    p_last_out: params.lastOutIso,
+    p_status: params.status,
+    p_notes: params.notes ?? null,
+    p_is_holiday: params.isHoliday ?? false,
+    p_is_weekly_off: params.isWeeklyOff ?? false,
+  })
+  if (error) return { error: error.message }
+  return { dailyId: data as string | undefined }
+}
+
 export async function recomputeAttendanceDaily(companyId: string, dateStr: string) {
   const { data, error } = await supabase.rpc('recompute_attendance_daily', {
     p_company_id: companyId,

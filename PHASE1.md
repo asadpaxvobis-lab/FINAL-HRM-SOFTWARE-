@@ -151,10 +151,16 @@ The first thing you'll see is the change-password screen because the seeded admi
   - **Approve** inserts the proposed `in` / `out` punches and re-aggregates the day automatically
 - Sidebar: new **Corrections** link under Time, new **Devices** link under Administration
 
-### Phase 3 still to do
-- ZKTeco push endpoint (.NET API or Edge Function) — uses the push token from `/admin/devices`
-- Live dashboard with SignalR realtime updates
-- Move daily aggregation to Postgres function / worker
+### Phase 3 batch 3 — server aggregation + live feed (done)
+- **Postgres** — `recompute_attendance_for_employee`, punch trigger, `device_pin` on employees (`0024`+)
+- **Edge Function** — `zkteco-push` webhook (device push token from `/admin/devices`)
+- **Dashboard** — Supabase Realtime subscription on `attendance_punches` for live punch feed
+- **Overtime** — net OT excludes late minutes (`0028_overtime_exclude_late`)
+- **Manual edit** — `set_manual_attendance_day` RPC (`0029`) syncs manual punches + recompute so Re-aggregate does not wipe edited in/out
+
+### Phase 3 optional / later
+- Full SignalR hub (.NET) instead of Supabase Realtime only
+- Deploy `zkteco-push` to production if not already (`supabase functions deploy zkteco-push`)
 
 ## Profile (placeholder replaced)
 - `/profile` — name update, change password, permission summary by module

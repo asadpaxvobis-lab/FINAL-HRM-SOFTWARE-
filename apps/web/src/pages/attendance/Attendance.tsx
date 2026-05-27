@@ -32,6 +32,8 @@ import {
   metricsFromEditTimes,
   formatShiftWindow,
   isCompleteDatetimeLocal,
+  saveManualAttendanceDay,
+  dateFromEditInputs,
 } from '@/lib/attendance'
 import { toCsv, downloadCsv } from '@/lib/csv'
 
@@ -385,43 +387,69 @@ export function AttendancePage() {
       return
     }
     setBusy(true)
-    const daily = byEmployee.get(editTarget.id)
-    const m = applyEditTimes(editForm.first_in, editForm.last_out)
     const firstIso = localDatetimeInputToIso(editForm.first_in)
     const lastIso = localDatetimeInputToIso(editForm.last_out)
-    const payload: Record<string, unknown> = {
-      company_id: appUser.company_id,
-      employee_id: editTarget.id,
-      attendance_date: date,
-      status: editForm.status,
-      first_in: firstIso,
-      last_out: lastIso,
-      worked_minutes: m.worked_minutes,
-      late_minutes: m.late_minutes,
-      early_out_minutes: m.early_out_minutes,
-      overtime_minutes: m.overtime_minutes,
-      is_holiday: editForm.is_holiday,
-      is_weekly_off: editForm.is_weekly_off,
-      notes: editForm.notes.trim() || null,
-    }
-    let res
-    if (editForm.id) {
-      res = await supabase.from('attendance_daily').update(payload).eq('id', editForm.id).select('id').single()
+    const attendanceDate = dateFromEditInputs(editForm.first_in, editForm.last_out, date)
+
+    let dailyId: string | undefined = editForm.id ?? undefined
+    let saveError: string | undefined
+
+    if (firstIso) {
+      const result = await saveManualAttendanceDay({
+        employeeId: editTarget.id,
+        date: attendanceDate,
+        firstInIso: firstIso,
+        lastOutIso: lastIso,
+        status: editForm.status,
+        notes: editForm.notes.trim() || null,
+        isHoliday: editForm.is_holiday,
+        isWeeklyOff: editForm.is_weekly_off,
+      })
+      saveError = result.error
+      dailyId = result.dailyId ?? dailyId
     } else {
-      res = await supabase.from('attendance_daily').insert(payload).select('id').single()
+      const payload: Record<string, unknown> = {
+        company_id: appUser.company_id,
+        employee_id: editTarget.id,
+        attendance_date: attendanceDate,
+        status: editForm.status,
+        first_in: null,
+        last_out: null,
+        worked_minutes: 0,
+        late_minutes: 0,
+        early_out_minutes: 0,
+        overtime_minutes: 0,
+        is_holiday: editForm.is_holiday,
+        is_weekly_off: editForm.is_weekly_off,
+        notes: editForm.notes.trim() || null,
+      }
+      const res = editForm.id
+        ? await supabase.from('attendance_daily').update(payload).eq('id', editForm.id).select('id').single()
+        : await supabase.from('attendance_daily').insert(payload).select('id').single()
+      if (res.error) saveError = res.error.message
+      else dailyId = res.data?.id
     }
+
     setBusy(false)
-    if (res.error) {
-      toast.error('Could not save attendance', { description: res.error.message })
+    if (saveError) {
+      toast.error('Could not save attendance', { description: saveError })
       return
     }
     await writeAuditLog({
       action: editForm.id ? 'UPDATE' : 'CREATE',
       entityType: 'attendance_daily',
-      entityId: res.data?.id,
-      after: payload,
+      entityId: dailyId,
+      after: {
+        employee_id: editTarget.id,
+        attendance_date: attendanceDate,
+        status: editForm.status,
+        first_in: firstIso,
+        last_out: lastIso,
+      },
     })
-    toast.success('Attendance saved')
+    toast.success('Attendance saved', {
+      description: firstIso ? 'Late and overtime recalculated from shift.' : undefined,
+    })
     setEditOpen(false)
     void load()
   }
