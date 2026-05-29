@@ -13,7 +13,7 @@ export type NavSection = {
 export const navSections: NavSection[] = [
   {
     items: [
-      { label: 'Dashboard', to: '/' },
+      { label: 'Dashboard', to: '/', perm: 'dashboard.view' },
       { label: 'Profile', to: '/profile' },
     ],
   },

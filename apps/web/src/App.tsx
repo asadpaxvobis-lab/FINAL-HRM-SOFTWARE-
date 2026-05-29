@@ -6,7 +6,7 @@ import { AppShell } from '@/components/layout/AppShell'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { LoginPage } from '@/pages/Login'
 import { ChangePasswordPage } from '@/pages/ChangePassword'
-import { DashboardPage } from '@/pages/Dashboard'
+import { HomePage, DefaultHomeRedirect } from '@/pages/HomePage'
 import { UsersPage } from '@/pages/admin/Users'
 import { RolesPage } from '@/pages/admin/Roles'
 import { SettingsPage } from '@/pages/admin/Settings'
@@ -83,7 +83,7 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<DashboardPage />} />
+              <Route index element={<HomePage />} />
 
               {/* Admin section */}
               <Route
@@ -505,7 +505,7 @@ export default function App() {
               <Route path="profile" element={<ProfilePage />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<DefaultHomeRedirect />} />
           </Routes>
         </BrowserRouter>
         <Toaster richColors position="top-right" closeButton />

@@ -189,9 +189,11 @@ export function ExpensesPage() {
             <Button variant="outline" size="sm" onClick={() => void load()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/expenses/categories')}>
-              Categories
-            </Button>
+            <HasPermission perm="expense.config">
+              <Button variant="outline" size="sm" onClick={() => navigate('/expenses/categories')}>
+                Categories
+              </Button>
+            </HasPermission>
             {canApply && appUser?.employee_id && (
               <Button size="sm" onClick={() => setOpen(true)}>
                 <Plus className="h-4 w-4" /> New claim

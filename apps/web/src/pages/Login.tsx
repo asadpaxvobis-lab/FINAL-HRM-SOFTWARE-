@@ -7,16 +7,17 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
 import { AppLogo } from '@/components/branding/AppLogo'
+import { getDefaultHomePath } from '@/lib/defaultRoute'
 
 export function LoginPage() {
   const [email, setEmail] = useState('admin@hrm.com')
   const [password, setPassword] = useState('admin123')
   const [showPwd, setShowPwd] = useState(false)
   const [busy, setBusy] = useState(false)
-  const { signIn } = useAuth()
+  const { signIn, hasPermission } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const from = (location.state as any)?.from?.pathname || '/'
+  const from = (location.state as any)?.from?.pathname as string | undefined
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -28,7 +29,9 @@ export function LoginPage() {
       return
     }
     toast.success('Welcome back')
-    navigate(from, { replace: true })
+    const home = getDefaultHomePath(hasPermission)
+    const dest = from && from !== '/' ? from : home
+    navigate(dest, { replace: true })
   }
 
   return (

@@ -3,6 +3,7 @@ import { Plus, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { navSections, quickAddActions } from '@/lib/navigation'
+import { getDefaultHomePath } from '@/lib/defaultRoute'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,14 +18,15 @@ export function Sidebar() {
   const navigate = useNavigate()
 
   const availableActions = quickAddActions.filter((a) => !a.perm || hasPermission(a.perm))
+  const homePath = getDefaultHomePath(hasPermission)
 
   return (
     <aside className="hidden lg:flex flex-col w-64 shrink-0 border-r bg-card h-screen sticky top-0">
       <NavLink
-        to="/"
+        to={homePath}
         end
         className="px-5 pt-5 pb-2 block text-sm font-semibold tracking-tight hover:text-primary transition-colors"
-        aria-label="Go to dashboard"
+        aria-label="Go to home"
       >
         SAFWA HRM
       </NavLink>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, Save, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -50,8 +50,30 @@ export function EmployeeDetailPage() {
   const { hasPermission } = useAuth()
   const canUpdate = hasPermission('employee.update')
   const canDelete = hasPermission('employee.delete')
+  const canViewPayroll = hasPermission('payroll.view') || hasPermission('payroll.config')
+  const canViewSalary = hasPermission('salary.view')
+  const canViewShifts = hasPermission('shift.view')
+  const canViewBank = hasPermission('employee.update') || hasPermission('payroll.config')
   type Tab = 'profile' | 'statutory' | 'shifts' | 'compensation' | 'bank' | 'documents'
+  const detailTabs = useMemo(
+    () => [
+      { id: 'profile' as Tab, label: 'Profile', visible: true },
+      { id: 'statutory' as Tab, label: 'Statutory', visible: canViewPayroll || canUpdate },
+      { id: 'shifts' as Tab, label: 'Shifts', visible: canViewShifts },
+      { id: 'compensation' as Tab, label: 'Compensation', visible: canViewSalary },
+      { id: 'bank' as Tab, label: 'Bank', visible: canViewBank },
+      { id: 'documents' as Tab, label: 'Documents', visible: true },
+    ],
+    [canViewPayroll, canUpdate, canViewShifts, canViewSalary, canViewBank]
+  )
+  const visibleTabs = detailTabs.filter((t) => t.visible)
   const [tab, setTab] = useState<Tab>('profile')
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab(visibleTabs[0]?.id ?? 'profile')
+    }
+  }, [visibleTabs, tab])
   const [loading, setLoading] = useState(true)
   const [employee, setEmployee] = useState<Record<string, unknown> | null>(null)
   const [statutory, setStatutory] = useState<Statutory>(defaultStatutory())
@@ -170,27 +192,24 @@ export function EmployeeDetailPage() {
         )}
       </div>
 
-      <div className="flex gap-1 border-b overflow-x-auto">
-        {([
-          ['profile', 'Profile'],
-          ['statutory', 'Statutory'],
-          ['shifts', 'Shifts'],
-          ['compensation', 'Compensation'],
-          ['bank', 'Bank'],
-          ['documents', 'Documents'],
-        ] as [Tab, string][]).map(([t, label]) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
-              tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {visibleTabs.length > 1 && (
+        <div className="flex gap-1 border-b overflow-x-auto">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === 'profile' && (
         <Card>
@@ -227,7 +246,7 @@ export function EmployeeDetailPage() {
         </Card>
       )}
 
-      {tab === 'statutory' && (
+      {tab === 'statutory' && (canViewPayroll || canUpdate) && (
         <Card>
           <CardHeader className="flex flex-row items-start justify-between gap-3">
             <div>
@@ -346,9 +365,9 @@ export function EmployeeDetailPage() {
         </Card>
       )}
 
-      {tab === 'shifts' && id && <ShiftAssignmentTab employeeId={id} />}
-      {tab === 'compensation' && id && <CompensationTab employeeId={id} />}
-      {tab === 'bank' && id && <BankTab employeeId={id} employeeName={fullName} />}
+      {tab === 'shifts' && id && canViewShifts && <ShiftAssignmentTab employeeId={id} />}
+      {tab === 'compensation' && id && canViewSalary && <CompensationTab employeeId={id} />}
+      {tab === 'bank' && id && canViewBank && <BankTab employeeId={id} employeeName={fullName} />}
       {tab === 'documents' && id && <DocumentsTab employeeId={id} />}
 
       <DeleteEmployeeDialog

@@ -74,13 +74,28 @@ const statusVariant = (s: string): 'warm' | 'outline' | 'secondary' => {
   return 'secondary'
 }
 
-const TABS = ['Apply', 'My requests', 'All requests'] as const
+type LeaveTab = 'Apply' | 'My requests' | 'All requests'
 
 export function LeavePage() {
   const { appUser, hasPermission } = useAuth()
   const canApprove = hasPermission('leave.approve')
   const canApply = hasPermission('leave.apply')
-  const [tab, setTab] = useState<typeof TABS[number]>(canApply ? 'Apply' : 'All requests')
+  const leaveTabs = useMemo(
+    () => [
+      { id: 'Apply' as LeaveTab, label: 'Apply', visible: canApply },
+      { id: 'My requests' as LeaveTab, label: 'My requests', visible: !!appUser?.employee_id },
+      { id: 'All requests' as LeaveTab, label: 'All requests', visible: canApprove },
+    ],
+    [canApply, canApprove, appUser?.employee_id]
+  )
+  const visibleTabs = leaveTabs.filter((t) => t.visible)
+  const [tab, setTab] = useState<LeaveTab>('Apply')
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab(visibleTabs[0]?.id ?? 'My requests')
+    }
+  }, [visibleTabs, tab])
   const [types, setTypes] = useState<LeaveType[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [me, setMe] = useState<Employee | null>(null)
@@ -300,22 +315,26 @@ export function LeavePage() {
         }
       />
 
-      <div className="flex gap-1 border-b overflow-x-auto">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
-              tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      {visibleTabs.length > 1 && (
+        <div className="flex gap-1 border-b overflow-x-auto">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab === 'Apply' && (
+      {tab === 'Apply' && canApply && (
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
             <Card>
@@ -432,7 +451,7 @@ export function LeavePage() {
         </div>
       )}
 
-      {tab === 'My requests' && (
+      {tab === 'My requests' && !!appUser?.employee_id && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">My requests</CardTitle>
@@ -453,7 +472,7 @@ export function LeavePage() {
         </Card>
       )}
 
-      {tab === 'All requests' && (
+      {tab === 'All requests' && canApprove && (
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center gap-3">

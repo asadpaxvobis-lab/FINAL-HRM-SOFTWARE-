@@ -250,12 +250,16 @@ export function PayrollPage() {
             <Button variant="outline" size="sm" onClick={() => void load()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/payroll/components')}>
-              Components
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/payroll/tax-slabs')}>
-              Tax slabs
-            </Button>
+            <HasPermission perm="payroll.config">
+              <Button variant="outline" size="sm" onClick={() => navigate('/payroll/components')}>
+                Components
+              </Button>
+            </HasPermission>
+            <HasPermission perm="payroll.view">
+              <Button variant="outline" size="sm" onClick={() => navigate('/payroll/tax-slabs')}>
+                Tax slabs
+              </Button>
+            </HasPermission>
             <HasPermission perm="payroll.run">
               <Button size="sm" onClick={() => void openCreate()}>
                 <Plus className="h-4 w-4" /> New period

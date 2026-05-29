@@ -36,7 +36,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   async function loadProfile(userId: string) {
-    // Load mirror row from public.users
+    setRoles([])
+    setPermissions(new Set())
+
     const { data: u, error: ue } = await supabase
       .from('users')
       .select('id, email, full_name, status, force_password_change, company_id, employee_id')
@@ -45,58 +47,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (ue || !u) {
       console.error('Failed to load public.users row', ue)
       setAppUser(null)
-      setRoles([])
-      setPermissions(new Set())
       return
     }
     setAppUser(u as AppUser)
 
-    // Roles
-    const { data: ur } = await supabase
-      .from('user_roles')
-      .select('roles ( id, name )')
-      .eq('user_id', userId)
-    const roleNames: string[] = []
-    const roleIds: string[] = []
-    for (const r of ur ?? []) {
-      const rel: any = (r as any).roles
-      if (rel) {
-        roleNames.push(rel.name)
-        roleIds.push(rel.id)
-      }
-    }
-    setRoles(roleNames)
+    const [rolesRes, permsRes] = await Promise.all([
+      supabase.rpc('get_my_role_names'),
+      supabase.rpc('get_my_permission_codes'),
+    ])
 
-    // Permission codes (role-derived + grant overrides minus deny overrides)
-    const permSet = new Set<string>()
-    if (roleIds.length > 0) {
-      const { data: rp } = await supabase
-        .from('role_permissions')
-        .select('permissions ( code )')
-        .in('role_id', roleIds)
-      for (const row of rp ?? []) {
-        const p: any = (row as any).permissions
-        if (p?.code) permSet.add(p.code)
-      }
+    if (rolesRes.error) {
+      console.error('Failed to load roles', rolesRes.error)
+      setRoles([])
+    } else {
+      setRoles((rolesRes.data ?? []) as string[])
     }
 
-    const { data: overrides } = await supabase
-      .from('user_permission_overrides')
-      .select('effect, permissions ( code )')
-      .eq('user_id', userId)
-    for (const o of overrides ?? []) {
-      const p: any = (o as any).permissions
-      if (!p?.code) continue
-      if ((o as any).effect === 'GRANT') permSet.add(p.code)
-      else if ((o as any).effect === 'DENY') permSet.delete(p.code)
+    if (permsRes.error) {
+      console.error('Failed to load permissions', permsRes.error)
+      setPermissions(new Set())
+    } else {
+      setPermissions(new Set((permsRes.data ?? []) as string[]))
     }
-    setPermissions(permSet)
   }
 
   useEffect(() => {
     let mounted = true
 
-    // Initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return
       setSession(session)
@@ -113,11 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(newSession)
       setAuthUser(newSession?.user ?? null)
       if (newSession?.user) {
-        void loadProfile(newSession.user.id)
+        setLoading(true)
+        void loadProfile(newSession.user.id).finally(() => mounted && setLoading(false))
       } else {
         setAppUser(null)
         setRoles([])
         setPermissions(new Set())
+        setLoading(false)
       }
     })
 
@@ -128,17 +107,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn: AuthContextValue['signIn'] = async (email, password) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: error.message }
+    setLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setLoading(false)
+      return { error: error.message }
+    }
+    if (data.user) {
+      await loadProfile(data.user.id)
+    }
+    setLoading(false)
     return { error: null }
   }
 
   const signOut = async () => {
+    setLoading(true)
     await supabase.auth.signOut()
+    setAppUser(null)
+    setRoles([])
+    setPermissions(new Set())
+    setLoading(false)
   }
 
   const refreshProfile = async () => {
-    if (authUser?.id) await loadProfile(authUser.id)
+    if (authUser?.id) {
+      setLoading(true)
+      await loadProfile(authUser.id)
+      setLoading(false)
+    }
   }
 
   const hasPermission = (code: string) => permissions.has(code)

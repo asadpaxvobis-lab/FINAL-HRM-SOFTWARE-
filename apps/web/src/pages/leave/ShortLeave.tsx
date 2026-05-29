@@ -66,13 +66,28 @@ const statusVariant = (s: string): 'warm' | 'outline' | 'secondary' => {
   return 'secondary'
 }
 
-const TABS = ['Apply', 'My requests', 'All requests'] as const
+type ShortLeaveTab = 'Apply' | 'My requests' | 'All requests'
 
 export function ShortLeavePage() {
   const { appUser, hasPermission } = useAuth()
   const canApprove = hasPermission('leave.approve')
   const canApply = hasPermission('leave.apply')
-  const [tab, setTab] = useState<(typeof TABS)[number]>(canApply ? 'Apply' : 'All requests')
+  const shortLeaveTabs = useMemo(
+    () => [
+      { id: 'Apply' as ShortLeaveTab, label: 'Apply', visible: canApply },
+      { id: 'My requests' as ShortLeaveTab, label: 'My requests', visible: !!appUser?.employee_id },
+      { id: 'All requests' as ShortLeaveTab, label: 'All requests', visible: canApprove },
+    ],
+    [canApply, canApprove, appUser?.employee_id]
+  )
+  const visibleTabs = shortLeaveTabs.filter((t) => t.visible)
+  const [tab, setTab] = useState<ShortLeaveTab>('Apply')
+
+  useEffect(() => {
+    if (!visibleTabs.some((t) => t.id === tab)) {
+      setTab(visibleTabs[0]?.id ?? 'My requests')
+    }
+  }, [visibleTabs, tab])
   const [employees, setEmployees] = useState<Employee[]>([])
   const [rows, setRows] = useState<ShortLeave[]>([])
   const [loading, setLoading] = useState(true)
@@ -265,20 +280,24 @@ export function ShortLeavePage() {
         }
       />
 
-      <div className="flex gap-1 border-b overflow-x-auto">
-        {TABS.filter((t) => (t === 'Apply' ? canApply : true)).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
-              tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      {visibleTabs.length > 1 && (
+        <div className="flex gap-1 border-b overflow-x-auto">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                tab === t.id
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === 'Apply' && canApply && (
         <Card>
@@ -361,7 +380,7 @@ export function ShortLeavePage() {
         </Card>
       )}
 
-      {tab !== 'Apply' && (
+      {((tab === 'My requests' && !!appUser?.employee_id) || (tab === 'All requests' && canApprove)) && (
         <>
           {tab === 'All requests' && (
             <div className="flex flex-wrap gap-2">

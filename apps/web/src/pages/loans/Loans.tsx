@@ -271,9 +271,11 @@ export function LoansPage() {
             <Button variant="outline" size="sm" onClick={() => void load()}>
               <RefreshCw className="h-4 w-4" />
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/loans/types')}>
-              Loan types
-            </Button>
+            <HasPermission perm="loan.approve">
+              <Button variant="outline" size="sm" onClick={() => navigate('/loans/types')}>
+                Loan types
+              </Button>
+            </HasPermission>
             {canCreate && appUser?.employee_id && (
               <Button size="sm" onClick={() => setOpen(true)}>
                 <Plus className="h-4 w-4" /> Request loan

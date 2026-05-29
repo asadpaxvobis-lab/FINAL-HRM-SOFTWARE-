@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { getDefaultHomePath } from '@/lib/defaultRoute'
 import { toast } from 'sonner'
 import { AppLogo } from '@/components/branding/AppLogo'
 
@@ -15,7 +16,7 @@ export function ChangePasswordPage() {
   const [confirm, setConfirm] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
-  const { appUser, refreshProfile } = useAuth()
+  const { appUser, refreshProfile, hasPermission } = useAuth()
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,7 +52,7 @@ export function ChangePasswordPage() {
     await refreshProfile()
     setBusy(false)
     toast.success('Password updated')
-    navigate('/', { replace: true })
+    navigate(getDefaultHomePath(hasPermission), { replace: true })
   }
 
   return (
