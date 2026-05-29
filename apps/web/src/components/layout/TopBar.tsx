@@ -25,7 +25,7 @@ export function TopBar() {
   const colorClass = avatarColorFor(seed)
 
   return (
-    <header className="h-16 border-b bg-background/80 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-6 gap-4">
+    <header className="app-topbar h-16 border-b bg-background/80 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-6 gap-4">
       <div className="flex items-center gap-3">
         <h1 className="text-sm font-semibold tracking-tight">Welcome back</h1>
         {roles.length > 0 && (

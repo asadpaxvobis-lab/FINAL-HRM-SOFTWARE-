@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Loader2, Plus, RefreshCw, Search, Activity, Calendar, Clock, Pencil } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Loader2, Plus, RefreshCw, Search, Activity, Calendar, Clock, Pencil, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { writeAuditLog } from '@/lib/audit'
@@ -36,6 +37,7 @@ import {
   dateFromEditInputs,
 } from '@/lib/attendance'
 import { toCsv, downloadCsv } from '@/lib/csv'
+import { monthOptions } from '@/pages/reports/shared'
 
 type Daily = {
   id: string
@@ -185,6 +187,7 @@ function minutesColumnValue(minutes: number, show: boolean): string {
 
 export function AttendancePage() {
   const { appUser, hasPermission } = useAuth()
+  const navigate = useNavigate()
   const canCreate = hasPermission('attendance.create')
   const canUpdate = hasPermission('attendance.update')
   const [date, setDate] = useState(today())
@@ -220,6 +223,14 @@ export function AttendancePage() {
     is_holiday: false,
     is_weekly_off: false,
     notes: '',
+  })
+
+  const now = new Date()
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportForm, setReportForm] = useState({
+    employee_id: '',
+    year: now.getFullYear(),
+    month: now.getMonth(),
   })
 
   async function load() {
@@ -513,6 +524,26 @@ export function AttendancePage() {
     toast.success('Exported')
   }
 
+  const openMonthlyReport = () => {
+    setReportForm({
+      employee_id: filtered[0]?.id ?? employees[0]?.id ?? '',
+      year: now.getFullYear(),
+      month: now.getMonth(),
+    })
+    setReportOpen(true)
+  }
+
+  const goMonthlyReport = () => {
+    if (!reportForm.employee_id) {
+      toast.error('Select an employee')
+      return
+    }
+    setReportOpen(false)
+    navigate(
+      `/attendance/monthly-report?employee=${reportForm.employee_id}&year=${reportForm.year}&month=${reportForm.month}`
+    )
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -529,6 +560,9 @@ export function AttendancePage() {
                 Export CSV
               </Button>
             </HasPermission>
+            <Button variant="outline" size="sm" onClick={openMonthlyReport} disabled={employees.length === 0}>
+              <Printer className="h-4 w-4" /> Monthly report
+            </Button>
             <HasPermission perm="attendance.update">
               <Button variant="outline" size="sm" onClick={onRecompute} disabled={busy}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Activity className="h-4 w-4" />}
@@ -921,6 +955,66 @@ export function AttendancePage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reportOpen} onOpenChange={setReportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Employee monthly report</DialogTitle>
+            <DialogDescription>
+              Generate a printable PDF with day-by-day attendance for one employee.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Employee</Label>
+              <Select
+                value={reportForm.employee_id}
+                onChange={(e) => setReportForm({ ...reportForm, employee_id: e.target.value })}
+              >
+                <option value="">Select employee</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.employee_code} — {e.full_name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Month</Label>
+                <Select
+                  value={String(reportForm.month)}
+                  onChange={(e) => setReportForm({ ...reportForm, month: Number(e.target.value) })}
+                >
+                  {monthOptions.map((m) => (
+                    <option key={m.v} value={m.v}>
+                      {m.l}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Year</Label>
+                <Input
+                  type="number"
+                  min={2020}
+                  max={2100}
+                  value={reportForm.year}
+                  onChange={(e) => setReportForm({ ...reportForm, year: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setReportOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={goMonthlyReport}>
+              <Printer className="h-4 w-4" /> Generate report
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

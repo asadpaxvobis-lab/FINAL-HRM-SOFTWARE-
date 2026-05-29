@@ -20,6 +20,7 @@ import { HolidaysPage } from '@/pages/master/Holidays'
 import { ShiftsPage } from '@/pages/master/Shifts'
 import { RosterPage } from '@/pages/master/Roster'
 import { AttendancePage } from '@/pages/attendance/Attendance'
+import { EmployeeMonthlyReportPage } from '@/pages/attendance/EmployeeMonthlyReport'
 import { CorrectionsPage } from '@/pages/attendance/Corrections'
 import { DevicesPage } from '@/pages/admin/Devices'
 import { ProfilePage } from '@/pages/Profile'
@@ -188,6 +189,14 @@ export default function App() {
                 element={
                   <ProtectedRoute perm="attendance.view">
                     <AttendancePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="attendance/monthly-report"
+                element={
+                  <ProtectedRoute perm="attendance.view">
+                    <EmployeeMonthlyReportPage />
                   </ProtectedRoute>
                 }
               />
