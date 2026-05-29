@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { fmtMinutes, displayOvertimeMinutes } from '@/lib/attendance'
 import { printableStyles, monthOptions } from '@/pages/reports/shared'
+import { AppLogo } from '@/components/branding/AppLogo'
 import { toast } from 'sonner'
 
 type Daily = {
@@ -220,10 +221,13 @@ export function EmployeeMonthlyReportPage() {
       <Card className="print:shadow-none print:border-0">
         <CardHeader className="border-b pb-4">
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <CardTitle className="text-2xl">{company?.name ?? 'Company'}</CardTitle>
-              {company?.legal_name && <CardDescription>{company.legal_name}</CardDescription>}
-              {company?.address && <p className="text-xs text-muted-foreground mt-1">{company.address}</p>}
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6 text-center sm:text-left">
+              <AppLogo centered className="h-56 w-full max-w-[560px] sm:max-w-[560px] shrink-0 sm:object-left sm:mx-0" />
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-2xl">{company?.name ?? 'Company'}</CardTitle>
+                {company?.legal_name && <CardDescription>{company.legal_name}</CardDescription>}
+                {company?.address && <p className="text-xs text-muted-foreground mt-1">{company.address}</p>}
+              </div>
             </div>
             <div className="text-right">
               <div className="text-xs uppercase tracking-wider text-muted-foreground">Monthly attendance</div>
@@ -351,7 +355,7 @@ export function EmployeeMonthlyReportPage() {
           </div>
 
           <p className="text-xs text-muted-foreground print:mt-4">
-            Generated {new Date().toLocaleString('en-PK')} · HRM ERP
+            Generated {new Date().toLocaleString('en-PK')} · SAFWA HRM
           </p>
         </CardContent>
       </Card>

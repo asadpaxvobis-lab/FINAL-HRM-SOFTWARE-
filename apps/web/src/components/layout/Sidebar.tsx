@@ -3,6 +3,7 @@ import { Plus, LogOut } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { navSections, quickAddActions } from '@/lib/navigation'
+import { AppLogo } from '@/components/branding/AppLogo'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,15 +20,18 @@ export function Sidebar() {
   const availableActions = quickAddActions.filter((a) => !a.perm || hasPermission(a.perm))
 
   return (
-    <aside className="hidden lg:flex flex-col w-64 shrink-0 border-r bg-card h-screen sticky top-0">
-      {/* Brand */}
+    <aside className="hidden lg:flex flex-col w-96 shrink-0 border-r bg-card h-screen sticky top-0">
+      {/* Brand banner */}
       <NavLink
         to="/"
         end
-        className="px-5 pt-5 pb-3 block hover:opacity-80 transition-opacity"
+        className="block border-b bg-muted/50 px-6 py-12 hover:bg-muted/70 transition-colors"
         aria-label="Go to dashboard"
       >
-        <h1 className="text-xl font-bold tracking-tight">HRM ERP 2026</h1>
+        <AppLogo centered className="h-56 w-full max-w-full min-h-[14rem]" />
+        <p className="text-center text-[11px] font-medium text-muted-foreground mt-4 tracking-[0.2em] uppercase">
+          HRM · Payroll
+        </p>
       </NavLink>
 
       {/* Quick add */}

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { toast } from 'sonner'
+import { AppLogo } from '@/components/branding/AppLogo'
 
 export function LoginPage() {
   const [email, setEmail] = useState('admin@hrm.com')
@@ -34,21 +35,9 @@ export function LoginPage() {
     <div className="min-h-screen w-full grid lg:grid-cols-2 bg-background motion-safe:animate-page-enter motion-reduce:animate-none">
       {/* Left: form */}
       <div className="flex items-center justify-center px-6 py-10">
-        <div className="w-full max-w-sm space-y-8">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-xl bg-primary text-primary-foreground grid place-items-center font-bold">
-                H
-              </div>
-              <div>
-                <div className="text-base font-semibold leading-tight">HRM ERP</div>
-                <div className="text-xs text-muted-foreground">Industry 4.0</div>
-              </div>
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight pt-4">Sign in to your account</h1>
-            <p className="text-sm text-muted-foreground">
-              Use your work email and password. First-time users will be asked to change their password.
-            </p>
+        <div className="w-full max-w-xl space-y-8">
+          <div className="text-center">
+            <AppLogo centered className="h-64 w-full max-w-[560px] min-h-[16rem]" />
           </div>
 
           <form onSubmit={onSubmit} className="space-y-4">
@@ -92,23 +81,15 @@ export function LoginPage() {
               {busy ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
-
-          <div className="text-xs text-muted-foreground border-t pt-4">
-            <div className="font-medium text-foreground/80 mb-1">First-time admin login</div>
-            <div>
-              <code className="text-foreground">admin@hrm.com</code> /{' '}
-              <code className="text-foreground">admin123</code>
-              <span className="block mt-1">You will be required to set a new password on first login.</span>
-            </div>
-          </div>
         </div>
       </div>
 
       {/* Right: branded panel */}
       <div className="hidden lg:flex relative items-center justify-center overflow-hidden bg-gradient-to-br from-orange-500 via-orange-400 to-amber-500">
         <div className="absolute inset-0 opacity-10 bg-[radial-gradient(circle_at_30%_20%,white,transparent_40%),radial-gradient(circle_at_70%_60%,white,transparent_40%)]" />
-        <div className="relative z-10 max-w-md text-white px-10">
-          <div className="text-sm font-medium opacity-80 mb-3">HRM + Payroll ERP</div>
+        <div className="relative z-10 max-w-lg w-full text-white px-10 text-center">
+          <AppLogo centered className="h-80 w-full max-w-[640px] min-h-[20rem] mb-12 brightness-0 invert drop-shadow-sm" />
+          <div className="text-sm font-medium opacity-90 mb-3 tracking-wide uppercase">HRM + Payroll ERP</div>
           <h2 className="text-4xl font-semibold leading-tight tracking-tight mb-4">
             Run your team with calm, clarity, and care.
           </h2>

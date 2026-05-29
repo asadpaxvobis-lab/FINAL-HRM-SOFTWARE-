@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { toast } from 'sonner'
+import { AppLogo } from '@/components/branding/AppLogo'
 
 export function ChangePasswordPage() {
   const [newPassword, setNewPassword] = useState('')
@@ -55,7 +56,9 @@ export function ChangePasswordPage() {
 
   return (
     <div className="min-h-screen grid place-items-center p-6 bg-background motion-safe:animate-page-enter motion-reduce:animate-none">
-      <Card className="w-full max-w-md">
+      <div className="w-full max-w-md space-y-8">
+        <AppLogo centered className="h-48 w-full max-w-[480px] mx-auto min-h-[12rem]" />
+        <Card className="w-full">
         <CardHeader>
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-primary" />
@@ -95,7 +98,8 @@ export function ChangePasswordPage() {
             </Button>
           </form>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
     </div>
   )
 }

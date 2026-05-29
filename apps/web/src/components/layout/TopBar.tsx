@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom'
 import { avatarColorFor, initialsFromName } from '@/lib/utils'
 import { GlobalSearch } from '@/components/layout/GlobalSearch'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
+import { AppLogo } from '@/components/branding/AppLogo'
 
 export function TopBar() {
   const { appUser, roles, signOut } = useAuth()
@@ -25,14 +26,18 @@ export function TopBar() {
   const colorClass = avatarColorFor(seed)
 
   return (
-    <header className="app-topbar h-16 border-b bg-background/80 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-6 gap-4">
-      <div className="flex items-center gap-3">
-        <h1 className="text-sm font-semibold tracking-tight">Welcome back</h1>
-        {roles.length > 0 && (
-          <span className="hidden sm:inline-flex items-center text-xs text-muted-foreground">
-            {roles.join(' · ')}
-          </span>
-        )}
+    <header className="app-topbar min-h-[7rem] border-b bg-background/95 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 gap-3">
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <AppLogo
+          centered
+          className="h-28 w-auto max-w-[400px] sm:max-w-[480px] shrink-0 lg:hidden"
+        />
+        <div className="min-w-0 hidden sm:block lg:block">
+          <h1 className="text-sm font-semibold tracking-tight truncate">Welcome back</h1>
+          {roles.length > 0 && (
+            <span className="text-xs text-muted-foreground truncate block">{roles.join(' · ')}</span>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3 ml-auto">
