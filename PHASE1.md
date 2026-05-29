@@ -192,6 +192,15 @@ The first thing you'll see is the change-password screen because the seeded admi
 - **Page transitions** — fade + slide-in on route change (`PageTransition.tsx`); staggered sections on dashboard (`AnimatedSection.tsx`)
 - **Employees CSV** — export filtered list, download template, import/upsert by `employee_code` (Excel opens UTF-8 BOM CSV)
 
+### Phase 4 extension — Short leave (this batch)
+- Migration `0035_short_leave` — `short_leave_applications` table + RLS (apply/approve/cancel)
+- **`/leave/short`** — apply for within-day time off (from/to times, max hours & monthly limit from app settings)
+- Default limits: **3 hours** per request, **2 requests** per month
+
+### Phase 3 extension — ZKTeco Windows agent
+- **`apps/agent`** — .NET 8 worker: local ADMS listener + SQLite offline queue + cloud sync to `zkteco-push`
+- Configure device to push to branch PC IP; agent forwards when internet is back
+
 ### Admin (prior batch, local)
 - User edit + admin password reset (`0031`–`0034`, `admin-reset-password` edge function)
 - Forced change-password flow removed after admin reset
