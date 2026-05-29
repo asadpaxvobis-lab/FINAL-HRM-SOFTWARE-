@@ -26,21 +26,21 @@ export function TopBar() {
   const colorClass = avatarColorFor(seed)
 
   return (
-    <header className="app-topbar min-h-[7rem] border-b bg-background/95 backdrop-blur sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6 gap-3">
-      <div className="flex items-center gap-4 min-w-0 flex-1">
-        <AppLogo
-          centered
-          className="h-28 w-auto max-w-[400px] sm:max-w-[480px] shrink-0 lg:hidden"
-        />
-        <div className="min-w-0 hidden sm:block lg:block">
-          <h1 className="text-sm font-semibold tracking-tight truncate">Welcome back</h1>
-          {roles.length > 0 && (
-            <span className="text-xs text-muted-foreground truncate block">{roles.join(' · ')}</span>
-          )}
-        </div>
+    <header className="app-topbar min-h-20 sm:min-h-24 h-auto py-2 border-b bg-background/95 backdrop-blur sticky top-0 z-30 flex items-center gap-3 sm:gap-6 px-4 sm:px-6">
+      <div className="min-w-0 shrink-0">
+        <h1 className="text-sm font-semibold tracking-tight truncate">Welcome back</h1>
+        {roles.length > 0 && (
+          <span className="text-xs text-muted-foreground truncate block max-w-[140px] sm:max-w-none">
+            {roles.join(' · ')}
+          </span>
+        )}
       </div>
 
-      <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+      <div className="flex-1 flex justify-center min-w-0 px-2">
+        <AppLogo centered className="h-20 sm:h-24 w-auto max-w-[420px] sm:max-w-[460px]" />
+      </div>
+
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <GlobalSearch />
 
         <ThemeToggle />
