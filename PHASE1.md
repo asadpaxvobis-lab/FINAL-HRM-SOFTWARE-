@@ -183,6 +183,19 @@ The first thing you'll see is the change-password screen because the seeded admi
 - **Approve** automatically increments `leave_balances.consumed` by the requested days
 - Sidebar: **Leave · Leave balances · Leave types** (last hidden without `leave.config`)
 
+## Phase 10 — Dashboard & polish (this resume)
+
+### Web UI
+- **Dashboard redesign** — 4 KPI cards, attendance line chart, department bar chart (Recharts), recent activity + upcoming leave lists; live data from Supabase
+- **Global search** — top-bar page search with Ctrl+K (`GlobalSearch.tsx` + shared `navigation.ts`)
+- **Theme toggle** — sun/moon pill in top bar (light ↔ dark)
+- **Page transitions** — fade + slide-in on route change (`PageTransition.tsx`); staggered sections on dashboard (`AnimatedSection.tsx`)
+- **Employees CSV** — export filtered list, download template, import/upsert by `employee_code` (Excel opens UTF-8 BOM CSV)
+
+### Admin (prior batch, local)
+- User edit + admin password reset (`0031`–`0034`, `admin-reset-password` edge function)
+- Forced change-password flow removed after admin reset
+
 ## Phase 3 onwards
 
 See README.md for the full 10-phase roadmap.

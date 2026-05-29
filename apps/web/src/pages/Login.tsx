@@ -31,7 +31,7 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen w-full grid lg:grid-cols-2 bg-background">
+    <div className="min-h-screen w-full grid lg:grid-cols-2 bg-background motion-safe:animate-page-enter motion-reduce:animate-none">
       {/* Left: form */}
       <div className="flex items-center justify-center px-6 py-10">
         <div className="w-full max-w-sm space-y-8">

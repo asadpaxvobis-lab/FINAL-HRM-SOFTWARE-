@@ -54,7 +54,7 @@ export function ChangePasswordPage() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center p-6 bg-background">
+    <div className="min-h-screen grid place-items-center p-6 bg-background motion-safe:animate-page-enter motion-reduce:animate-none">
       <Card className="w-full max-w-md">
         <CardHeader>
           <div className="flex items-center gap-2">

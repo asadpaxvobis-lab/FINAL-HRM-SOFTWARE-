@@ -1,6 +1,5 @@
-import { Moon, Sun, LogOut, KeyRound, UserRound, Monitor } from 'lucide-react'
+import { LogOut, KeyRound, UserRound } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { useTheme } from '@/contexts/ThemeContext'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -13,10 +12,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useNavigate } from 'react-router-dom'
 import { avatarColorFor, initialsFromName } from '@/lib/utils'
+import { GlobalSearch } from '@/components/layout/GlobalSearch'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 
 export function TopBar() {
   const { appUser, roles, signOut } = useAuth()
-  const { theme, setTheme, resolvedTheme } = useTheme()
   const navigate = useNavigate()
 
   const displayName = appUser?.full_name || appUser?.email || 'User'
@@ -35,26 +35,10 @@ export function TopBar() {
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Theme">
-              {resolvedTheme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel className="text-xs">Appearance</DropdownMenuLabel>
-            <DropdownMenuItem onClick={() => setTheme('light')}>
-              <Sun className="h-4 w-4" /> Light {theme === 'light' && <span className="ml-auto text-xs">✓</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme('dark')}>
-              <Moon className="h-4 w-4" /> Dark {theme === 'dark' && <span className="ml-auto text-xs">✓</span>}
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => setTheme('system')}>
-              <Monitor className="h-4 w-4" /> System {theme === 'system' && <span className="ml-auto text-xs">✓</span>}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="flex items-center gap-2 sm:gap-3 ml-auto">
+        <GlobalSearch />
+
+        <ThemeToggle />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

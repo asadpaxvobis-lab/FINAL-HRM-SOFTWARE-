@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { Plus, Pencil, RefreshCw, Loader2, Users, Search, ChevronRight, ArrowLeft, ArrowRight, Check, Camera, X, Trash2, Save } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Plus, Pencil, RefreshCw, Loader2, Users, Search, ChevronRight, ArrowLeft, ArrowRight, Check, Camera, X, Trash2, Save, Upload, Download } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -25,6 +25,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { avatarColorFor, cn, initialsFromName } from '@/lib/utils'
+import { downloadCsv, parseCsv, toCsv } from '@/lib/csv'
 import { toast } from 'sonner'
 import { DocumentsTab } from '@/components/employee/DocumentsTab'
 import { DeleteEmployeeDialog } from '@/components/employee/DeleteEmployeeDialog'
@@ -40,15 +41,19 @@ type Employee = {
   email: string | null
   phone: string | null
   cnic: string | null
+  gender: string | null
+  date_of_birth: string | null
+  date_of_joining: string | null
+  device_pin: number | null
   employment_status: string
   is_active: boolean
   photo_url: string | null
   branch_id: string | null
   department_id: string | null
   designation_id: string | null
-  branches?: { name: string } | null
-  departments?: { name: string } | null
-  designations?: { title: string } | null
+  branches?: { name: string; code?: string } | null
+  departments?: { name: string; code?: string } | null
+  designations?: { title: string; code?: string } | null
 }
 
 const emptyForm = {
@@ -154,17 +159,19 @@ export function EmployeesPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null)
+  const [importing, setImporting] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   async function loadLookups() {
     const [b, d, des, emp] = await Promise.all([
-      supabase.from('branches').select('id, name').eq('is_active', true).order('name'),
-      supabase.from('departments').select('id, name').eq('is_active', true).order('name'),
-      supabase.from('designations').select('id, title').eq('is_active', true).order('title'),
+      supabase.from('branches').select('id, name, code').eq('is_active', true).order('name'),
+      supabase.from('departments').select('id, name, code').eq('is_active', true).order('name'),
+      supabase.from('designations').select('id, title, code').eq('is_active', true).order('title'),
       supabase.from('employees').select('id, full_name, employee_code').eq('is_active', true).order('full_name'),
     ])
-    setBranches((b.data ?? []).map((x) => ({ id: x.id, name: x.name })))
-    setDepartments((d.data ?? []).map((x) => ({ id: x.id, name: x.name })))
-    setDesignations((des.data ?? []).map((x) => ({ id: x.id, title: x.title })))
+    setBranches((b.data ?? []).map((x) => ({ id: x.id, name: x.name, code: x.code })))
+    setDepartments((d.data ?? []).map((x) => ({ id: x.id, name: x.name, code: x.code })))
+    setDesignations((des.data ?? []).map((x) => ({ id: x.id, title: x.title, code: x.code })))
     setManagers((emp.data ?? []).map((x) => ({ id: x.id, name: `${x.full_name} (${x.employee_code})` })))
   }
 
@@ -173,9 +180,10 @@ export function EmployeesPage() {
     const { data, error } = await supabase
       .from('employees')
       .select(
-        `id, employee_code, first_name, last_name, full_name, email, phone, cnic, employment_status, is_active, photo_url,
+        `id, employee_code, first_name, last_name, full_name, email, phone, cnic, gender, date_of_birth, date_of_joining, device_pin,
+         employment_status, is_active, photo_url,
          branch_id, department_id, designation_id,
-         branches(name), departments(name), designations(title)`
+         branches(name, code), departments(name, code), designations(title, code)`
       )
       .order('employee_code')
     if (error) toast.error('Failed to load employees', { description: error.message })
@@ -213,6 +221,200 @@ export function EmployeesPage() {
       (e.cnic ?? '').includes(q)
     )
   })
+
+  const csvColumns = [
+    'employee_code',
+    'first_name',
+    'last_name',
+    'email',
+    'phone',
+    'cnic',
+    'gender',
+    'date_of_birth',
+    'date_of_joining',
+    'employment_status',
+    'branch_code',
+    'department_code',
+    'designation_code',
+    'device_pin',
+    'is_active',
+  ] as const
+
+  const exportCsv = () => {
+    const data = filtered.map((e) => ({
+      employee_code: e.employee_code,
+      first_name: e.first_name,
+      last_name: e.last_name ?? '',
+      email: e.email ?? '',
+      phone: e.phone ?? '',
+      cnic: e.cnic ?? '',
+      gender: e.gender ?? '',
+      date_of_birth: e.date_of_birth ?? '',
+      date_of_joining: e.date_of_joining ?? '',
+      employment_status: e.employment_status,
+      branch_code: e.branches?.code ?? '',
+      department_code: e.departments?.code ?? '',
+      designation_code: e.designations?.code ?? '',
+      device_pin: e.device_pin ?? '',
+      is_active: e.is_active ? 'Yes' : 'No',
+    }))
+    downloadCsv(`employees-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(data, [...csvColumns]))
+    toast.success('Exported', { description: `${data.length} employee(s)` })
+  }
+
+  const downloadTemplate = () => {
+    const sample = [
+      {
+        employee_code: 'EMP-0001',
+        first_name: 'Sample',
+        last_name: 'Employee',
+        email: 'sample@company.com',
+        phone: '03001234567',
+        cnic: '35202-1234567-1',
+        gender: 'Male',
+        date_of_birth: '1990-01-15',
+        date_of_joining: '2024-06-01',
+        employment_status: 'Active',
+        branch_code: 'HQ',
+        department_code: 'HR',
+        designation_code: 'MGR',
+        device_pin: '101',
+        is_active: 'Yes',
+      },
+    ]
+    downloadCsv('employees-template.csv', toCsv(sample, [...csvColumns]))
+  }
+
+  const resolveLookup = (
+    value: string,
+    byCode: Map<string, string>,
+    byName: Map<string, string>
+  ): string | null | 'error' => {
+    const raw = value.trim()
+    if (!raw) return null
+    const key = raw.toLowerCase()
+    const id = byCode.get(key) ?? byName.get(key)
+    if (!id) return 'error'
+    return id
+  }
+
+  const importCsv = async (file: File) => {
+    if (!appUser) return
+    setImporting(true)
+    try {
+      const text = await file.text()
+      const records = parseCsv(text)
+      if (records.length === 0) {
+        toast.error('Empty file')
+        return
+      }
+
+      const branchByCode = new Map(branches.filter((b) => b.code).map((b) => [b.code!.toLowerCase(), b.id]))
+      const branchByName = new Map(branches.map((b) => [(b.name ?? '').toLowerCase(), b.id]))
+      const deptByCode = new Map(departments.filter((d) => d.code).map((d) => [d.code!.toLowerCase(), d.id]))
+      const deptByName = new Map(departments.map((d) => [(d.name ?? '').toLowerCase(), d.id]))
+      const desByCode = new Map(designations.filter((d) => d.code).map((d) => [d.code!.toLowerCase(), d.id]))
+      const desByTitle = new Map(designations.map((d) => [(d.title ?? '').toLowerCase(), d.id]))
+
+      const valid: Record<string, unknown>[] = []
+      const errors: string[] = []
+
+      records.forEach((r, idx) => {
+        const rowNum = idx + 2
+        const employee_code = (r.employee_code ?? '').trim()
+        const first_name = (r.first_name ?? '').trim()
+        if (!employee_code || !first_name) {
+          errors.push(`Row ${rowNum}: employee_code and first_name are required`)
+          return
+        }
+
+        const branchVal = resolveLookup(r.branch_code ?? r.branch_name ?? '', branchByCode, branchByName)
+        if (branchVal === 'error') {
+          errors.push(`Row ${rowNum}: branch not found`)
+          return
+        }
+        const deptVal = resolveLookup(r.department_code ?? r.department_name ?? '', deptByCode, deptByName)
+        if (deptVal === 'error') {
+          errors.push(`Row ${rowNum}: department not found`)
+          return
+        }
+        const desVal = resolveLookup(r.designation_code ?? r.designation_title ?? '', desByCode, desByTitle)
+        if (desVal === 'error') {
+          errors.push(`Row ${rowNum}: designation not found`)
+          return
+        }
+
+        const yes = (v: string) => /^(yes|true|1|y)$/i.test(v.trim())
+        const status = (r.employment_status ?? 'Active').trim()
+        if (!EMPLOYMENT_STATUSES.includes(status as (typeof EMPLOYMENT_STATUSES)[number])) {
+          errors.push(`Row ${rowNum}: invalid employment_status`)
+          return
+        }
+
+        const genderRaw = (r.gender ?? '').trim()
+        if (genderRaw && !['Male', 'Female', 'Other'].includes(genderRaw)) {
+          errors.push(`Row ${rowNum}: gender must be Male, Female, or Other`)
+          return
+        }
+
+        const pinRaw = (r.device_pin ?? '').trim()
+        let device_pin: number | null = null
+        if (pinRaw) {
+          const pin = Number(pinRaw)
+          if (!Number.isInteger(pin) || pin <= 0) {
+            errors.push(`Row ${rowNum}: device_pin must be a positive integer`)
+            return
+          }
+          device_pin = pin
+        }
+
+        valid.push({
+          company_id: appUser.company_id,
+          employee_code,
+          first_name,
+          last_name: (r.last_name ?? '').trim() || null,
+          email: (r.email ?? '').trim() || null,
+          phone: (r.phone ?? '').trim() || null,
+          cnic: (r.cnic ?? '').trim() || null,
+          gender: genderRaw || null,
+          date_of_birth: (r.date_of_birth ?? '').trim() || null,
+          date_of_joining: (r.date_of_joining ?? '').trim() || null,
+          employment_status: status,
+          branch_id: branchVal,
+          department_id: deptVal,
+          designation_id: desVal,
+          device_pin,
+          is_active: r.is_active ? yes(r.is_active) : true,
+        })
+      })
+
+      if (valid.length === 0) {
+        toast.error('Import failed', { description: errors.slice(0, 3).join(' • ') })
+        return
+      }
+
+      const { error } = await supabase.from('employees').upsert(valid, { onConflict: 'company_id,employee_code' })
+      if (error) {
+        toast.error('Import failed', { description: error.message })
+        return
+      }
+
+      await writeAuditLog({
+        action: 'CREATE',
+        entityType: 'employees_import',
+        after: { count: valid.length, skipped: errors.length },
+      })
+      toast.success(`Imported ${valid.length} employee(s)`, {
+        description: errors.length ? `${errors.length} row(s) skipped` : undefined,
+      })
+      void load()
+    } catch (err) {
+      toast.error('Could not read file', { description: (err as Error).message })
+    } finally {
+      setImporting(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
 
   const resetWizard = () => {
     setStep(1)
@@ -558,6 +760,33 @@ export function EmployeesPage() {
         description="Employee master records — full lifecycle: profile, salary, statutory, documents."
         actions={
           <>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void importCsv(f)
+              }}
+            />
+            <Button variant="outline" size="sm" onClick={downloadTemplate}>
+              <Download className="h-4 w-4" /> Template
+            </Button>
+            <HasPermission perm="employee.create">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={importing}
+                onClick={() => fileRef.current?.click()}
+              >
+                {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                Import CSV
+              </Button>
+            </HasPermission>
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
             <Button variant="outline" size="sm" onClick={() => void load()}>
               <RefreshCw className="h-4 w-4" /> Refresh
             </Button>

@@ -26,6 +26,7 @@ import { ProfilePage } from '@/pages/Profile'
 import { LeavePage } from '@/pages/leave/Leave'
 import { LeaveTypesPage } from '@/pages/leave/LeaveTypes'
 import { LeaveBalancesPage } from '@/pages/leave/LeaveBalances'
+import { ShortLeavePage } from '@/pages/leave/ShortLeave'
 import { PayrollPage } from '@/pages/payroll/Payroll'
 import { PayrollComponentsPage } from '@/pages/payroll/Components'
 import { TaxSlabsPage } from '@/pages/payroll/TaxSlabs'
@@ -235,6 +236,14 @@ export default function App() {
                 element={
                   <ProtectedRoute perm="leave.view">
                     <LeaveBalancesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="leave/short"
+                element={
+                  <ProtectedRoute perm="leave.view">
+                    <ShortLeavePage />
                   </ProtectedRoute>
                 }
               />

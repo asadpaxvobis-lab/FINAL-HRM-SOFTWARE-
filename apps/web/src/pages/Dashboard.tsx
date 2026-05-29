@@ -1,618 +1,572 @@
 import {
   Users,
-  Building2,
-  Briefcase,
-  GraduationCap,
-  CalendarDays,
-  CalendarRange,
-  Timer,
+  UserPlus,
   Clock,
-  FileQuestion,
-  HardDrive,
-  Wallet,
-  Receipt,
-  Coins,
-  Megaphone,
-  Pin,
-  AlertTriangle,
-  FileText,
-  BarChart3,
-  LogOut,
-  UserSearch,
-  Shield,
-  Settings as SettingsIcon,
-  ClipboardList,
-  UserCircle,
+  TrendingUp,
+  ArrowRight,
   type LucideIcon,
 } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuth } from '@/contexts/AuthContext'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Link } from 'react-router-dom'
-import { cn } from '@/lib/utils'
+import { avatarColorFor, cn, initialsFromName } from '@/lib/utils'
+import { AnimatedSection } from '@/components/layout/AnimatedSection'
 
-type Stat = {
-  label: string
-  value: number | string
+type KpiCardProps = {
+  title: string
+  value: string | number
+  subtext: string
+  subtextClass?: string
   icon: LucideIcon
-  hint: string
+  iconBg: string
+  iconColor: string
   to?: string
-  perm?: string
 }
 
-type QuickAction = {
-  label: string
-  description: string
-  to: string
-  icon: LucideIcon
-  perm?: string
-  tone: 'orange' | 'blue' | 'green' | 'purple' | 'amber' | 'rose' | 'cyan' | 'slate'
+type MonthPoint = { month: string; rate: number }
+type DeptPoint = { code: string; count: number }
+type ActivityItem = { id: string; name: string; action: string; at: string }
+type LeaveItem = {
+  id: string
+  name: string
+  department: string
+  dateLabel: string
+  days: number
 }
 
-const toneClasses: Record<QuickAction['tone'], string> = {
-  orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
-  blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-  green: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  purple: 'bg-purple-500/10 text-purple-600 dark:text-purple-400',
-  amber: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  rose: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-  cyan: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-  slate: 'bg-slate-500/10 text-slate-600 dark:text-slate-400',
+const PIPELINE_STAGES = ['APPLIED', 'SCREENING', 'INTERVIEW', 'OFFER'] as const
+const ATTENDED_STATUSES = new Set(['Present', 'Late', 'Half Day'])
+const WORKDAY_STATUSES = new Set(['Present', 'Late', 'Absent', 'Half Day'])
+
+function formatRelativeLong(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const diff = Date.now() - d.getTime()
+  const sec = Math.floor(diff / 1000)
+  if (sec < 60) return 'just now'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`
+  const day = Math.floor(hr / 24)
+  if (day < 7) return `${day} day${day === 1 ? '' : 's'} ago`
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-const quickActions: { heading: string; items: QuickAction[] }[] = [
-  {
-    heading: 'People',
-    items: [
-      { label: 'Employees', description: 'Browse, add, and edit employee records', to: '/employees', icon: Users, perm: 'employee.view', tone: 'orange' },
-      { label: 'Departments', description: 'Organize teams and units', to: '/departments', icon: Briefcase, perm: 'department.view', tone: 'blue' },
-      { label: 'Designations', description: 'Job titles and grades', to: '/designations', icon: GraduationCap, perm: 'designation.view', tone: 'purple' },
-      { label: 'Branches', description: 'Physical locations and sites', to: '/branches', icon: Building2, perm: 'branch.view', tone: 'cyan' },
-    ],
-  },
-  {
-    heading: 'Time & Attendance',
-    items: [
-      { label: 'Holidays', description: 'Calendar and branch exclusions', to: '/holidays', icon: CalendarRange, perm: 'holiday.view', tone: 'rose' },
-      { label: 'Shifts', description: 'Define work schedules', to: '/shifts', icon: Timer, perm: 'shift.view', tone: 'amber' },
-      { label: 'Bulk Shift Assign', description: 'Assign shifts in bulk', to: '/roster', icon: ClipboardList, perm: 'shift.view', tone: 'green' },
-      { label: 'Attendance', description: 'Daily attendance and punches', to: '/attendance', icon: Clock, perm: 'attendance.view', tone: 'blue' },
-      { label: 'Corrections', description: 'Approve missing punch requests', to: '/attendance/corrections', icon: FileQuestion, perm: 'attendance.view', tone: 'orange' },
-      { label: 'Overtime', description: 'OT requests, approvals, payouts', to: '/overtime', icon: Clock, perm: 'overtime.view', tone: 'purple' },
-    ],
-  },
-  {
-    heading: 'Leave',
-    items: [
-      { label: 'Leave', description: 'Apply and track requests', to: '/leave', icon: CalendarDays, perm: 'leave.view', tone: 'purple' },
-      { label: 'Leave balances', description: 'View and grant balances', to: '/leave/balances', icon: CalendarDays, perm: 'leave.view', tone: 'cyan' },
-      { label: 'Leave types', description: 'Configure policies', to: '/leave/types', icon: CalendarDays, perm: 'leave.config', tone: 'slate' },
-    ],
-  },
-  {
-    heading: 'Payroll & Finance',
-    items: [
-      { label: 'Payroll runs', description: 'Periods, payslips, releases', to: '/payroll', icon: Wallet, perm: 'payroll.view', tone: 'green' },
-      { label: 'Payroll components', description: 'Earnings, deductions, contributions', to: '/payroll/components', icon: Wallet, perm: 'payroll.config', tone: 'cyan' },
-      { label: 'Tax slabs', description: 'FBR salaried income-tax bands', to: '/payroll/tax-slabs', icon: Wallet, perm: 'payroll.view', tone: 'purple' },
-      { label: 'Expense claims', description: 'Submit and approve expenses', to: '/expenses', icon: Receipt, perm: 'expense.view', tone: 'amber' },
-      { label: 'Expense categories', description: 'Caps, GL accounts, receipt rules', to: '/expenses/categories', icon: Receipt, perm: 'expense.config', tone: 'rose' },
-      { label: 'Loans & advances', description: 'Request, approve, and track repayments', to: '/loans', icon: Coins, perm: 'loan.view', tone: 'green' },
-      { label: 'Loan types', description: 'Caps, interest, installments', to: '/loans/types', icon: Coins, perm: 'loan.approve', tone: 'blue' },
-    ],
-  },
-  {
-    heading: 'Communication',
-    items: [
-      { label: 'Announcements', description: 'Company-wide notice board', to: '/announcements', icon: Megaphone, perm: 'announcement.view', tone: 'rose' },
-      { label: 'Letters', description: 'Offer, experience, NOC, warnings', to: '/letters', icon: FileText, perm: 'letter.view', tone: 'blue' },
-      { label: 'Resignations', description: 'Exit requests, clearance, settlement', to: '/resignations', icon: LogOut, perm: 'resignation.view', tone: 'amber' },
-    ],
-  },
-  {
-    heading: 'Recruitment',
-    items: [
-      { label: 'Recruitment hub', description: 'Jobs, pipeline, interviews, hire', to: '/recruitment', icon: UserSearch, perm: 'recruitment.view', tone: 'blue' },
-      { label: 'Job postings', description: 'Open roles and requirements', to: '/recruitment/jobs', icon: Briefcase, perm: 'recruitment.view', tone: 'cyan' },
-      { label: 'Candidate pipeline', description: 'Applied → screening → interview → offer', to: '/recruitment/pipeline', icon: Users, perm: 'recruitment.view', tone: 'purple' },
-    ],
-  },
-  {
-    heading: 'Reports',
-    items: [
-      { label: 'Reports', description: 'Muster roll, salary register, statutory', to: '/reports', icon: BarChart3, perm: 'report.view', tone: 'purple' },
-    ],
-  },
-  {
-    heading: 'Administration',
-    items: [
-      { label: 'Users', description: 'System login accounts', to: '/admin/users', icon: Users, perm: 'user.view', tone: 'slate' },
-      { label: 'Roles & permissions', description: 'RBAC configuration', to: '/admin/roles', icon: Shield, perm: 'role.view', tone: 'orange' },
-      { label: 'Devices', description: 'Biometric & punch devices', to: '/admin/devices', icon: HardDrive, perm: 'attendance.view', tone: 'cyan' },
-      { label: 'Audit log', description: 'System change history', to: '/admin/audit', icon: ClipboardList, perm: 'audit.view', tone: 'green' },
-      { label: 'Settings', description: 'Company profile and preferences', to: '/admin/settings', icon: SettingsIcon, perm: 'settings.view', tone: 'amber' },
-      { label: 'My profile', description: 'Update name, password, view permissions', to: '/profile', icon: UserCircle, tone: 'blue' },
-    ],
-  },
-]
+function monthKey(dateStr: string): string {
+  return dateStr.slice(0, 7)
+}
+
+function monthLabel(key: string): string {
+  const [y, m] = key.split('-').map(Number)
+  return new Date(y, m - 1, 1).toLocaleString(undefined, { month: 'short' })
+}
+
+function lastSixMonthKeys(): string[] {
+  const keys: string[] = []
+  const now = new Date()
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  return keys
+}
+
+function attendanceRateFromRows(rows: { status: string }[]): number {
+  const relevant = rows.filter((r) => WORKDAY_STATUSES.has(r.status))
+  if (relevant.length === 0) return 0
+  const attended = relevant.filter((r) => ATTENDED_STATUSES.has(r.status)).length
+  return (attended / relevant.length) * 100
+}
+
+function auditActionLabel(action: string, entityType: string): string {
+  const entity = entityType.replace(/_/g, ' ')
+  switch (action.toUpperCase()) {
+    case 'CREATE':
+      return `created ${entity}`
+    case 'UPDATE':
+      return `updated ${entity}`
+    case 'DELETE':
+      return `deleted ${entity}`
+    case 'LOGIN':
+      return 'logged in'
+    case 'LOGOUT':
+      return 'logged out'
+    default:
+      return `${action.toLowerCase()} ${entity}`
+  }
+}
+
+function KpiCard({ title, value, subtext, subtextClass, icon: Icon, iconBg, iconColor, to }: KpiCardProps) {
+  const card = (
+    <Card className={cn('shadow-sm', to && 'transition-colors hover:border-primary/30 hover:bg-accent/30')}>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 space-y-2">
+            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+            <p className="text-3xl font-semibold tabular-nums tracking-tight">{value}</p>
+            <p className={cn('text-sm', subtextClass ?? 'text-emerald-600 dark:text-emerald-400')}>{subtext}</p>
+          </div>
+          <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full', iconBg)}>
+            <Icon className={cn('h-5 w-5', iconColor)} />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+  return to ? <Link to={to}>{card}</Link> : card
+}
+
+function ViewAllLink({ to }: { to: string }) {
+  return (
+    <Link to={to} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+      View All
+      <ArrowRight className="h-4 w-4" />
+    </Link>
+  )
+}
 
 export function DashboardPage() {
-  const { appUser, roles, permissions, hasPermission } = useAuth()
-  const [stats, setStats] = useState({
-    employees: '—' as number | string,
-    branches: '—' as number | string,
-    departments: '—' as number | string,
-    designations: '—' as number | string,
-    users: '—' as number | string,
-    onLeaveToday: '—' as number | string,
-    pendingLeave: '—' as number | string,
-    pendingCorrections: '—' as number | string,
-    upcomingHolidays: '—' as number | string,
-    activeDevices: '—' as number | string,
-    presentToday: '—' as number | string,
-    lateToday: '—' as number | string,
-    absentToday: '—' as number | string,
-  })
-  const [livePunches, setLivePunches] = useState<
-    { id: string; name: string; code: string; punch_at: string; source: string }[]
-  >([])
-  const [onLeaveList, setOnLeaveList] = useState<{ id: string; name: string; type: string; until: string }[]>([])
-  const [upcomingHolidays, setUpcomingHolidays] = useState<{ id: string; name: string; date: string }[]>([])
-  const [announcements, setAnnouncements] = useState<
-    { id: string; title: string; category: string; priority: string; pinned: boolean; published_at: string | null; unread: boolean }[]
-  >([])
-
+  const { appUser, hasPermission } = useAuth()
   const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), [])
-  const in30Iso = useMemo(() => {
-    const d = new Date()
-    d.setDate(d.getDate() + 30)
-    return d.toISOString().slice(0, 10)
-  }, [])
+
+  const [loading, setLoading] = useState(true)
+  const [totalEmployees, setTotalEmployees] = useState(0)
+  const [activeEmployees, setActiveEmployees] = useState(0)
+  const [newCandidates, setNewCandidates] = useState(0)
+  const [pipelineCandidates, setPipelineCandidates] = useState(0)
+  const [attendanceRate, setAttendanceRate] = useState<number | null>(null)
+  const [attendanceDelta, setAttendanceDelta] = useState<number | null>(null)
+  const [pendingLeaves, setPendingLeaves] = useState(0)
+  const [totalLeaveRequests, setTotalLeaveRequests] = useState(0)
+  const [attendanceTrend, setAttendanceTrend] = useState<MonthPoint[]>([])
+  const [deptDistribution, setDeptDistribution] = useState<DeptPoint[]>([])
+  const [recentActivity, setRecentActivity] = useState<ActivityItem[]>([])
+  const [upcomingLeaves, setUpcomingLeaves] = useState<LeaveItem[]>([])
 
   useEffect(() => {
     const load = async () => {
-      const attendanceDailyQuery = hasPermission('attendance.view')
-        ? supabase.from('attendance_daily').select('status').eq('attendance_date', todayIso)
-        : Promise.resolve({ data: [] as { status: string }[] })
+      setLoading(true)
+      try {
+        const monthKeys = lastSixMonthKeys()
+        const rangeStart = `${monthKeys[0]}-01`
+        const thirtyDaysAgo = new Date()
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+        const thirtyDaysAgoIso = thirtyDaysAgo.toISOString()
 
-      const [emp, br, dep, desg, us, dev, hol, holList, leaveToday, pendLeave, pendCorr, dailyRows] = await Promise.all([
-        supabase.from('employees').select('*', { count: 'exact', head: true }),
-        supabase.from('branches').select('*', { count: 'exact', head: true }),
-        supabase.from('departments').select('*', { count: 'exact', head: true }),
-        supabase.from('designations').select('*', { count: 'exact', head: true }),
-        supabase.from('users').select('*', { count: 'exact', head: true }),
-        supabase.from('attendance_devices').select('*', { count: 'exact', head: true }).eq('is_active', true),
-        supabase
-          .from('holidays')
-          .select('*', { count: 'exact', head: true })
-          .gte('holiday_date', todayIso)
-          .lte('holiday_date', in30Iso),
-        supabase
-          .from('holidays')
-          .select('id, name, holiday_date')
-          .gte('holiday_date', todayIso)
-          .lte('holiday_date', in30Iso)
-          .order('holiday_date', { ascending: true })
-          .limit(5),
-        supabase
-          .from('leave_applications')
-          .select('id, from_date, to_date, status, employees ( first_name, last_name ), leave_types ( name )')
-          .lte('from_date', todayIso)
-          .gte('to_date', todayIso)
-          .eq('status', 'APPROVED')
-          .limit(8),
-        supabase
-          .from('leave_applications')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'PENDING'),
-        supabase
-          .from('attendance_corrections')
-          .select('*', { count: 'exact', head: true })
-          .eq('status', 'PENDING'),
-        attendanceDailyQuery,
-      ])
+        const canAttendance = hasPermission('attendance.view')
+        const canRecruitment = hasPermission('recruitment.view')
+        const canLeave = hasPermission('leave.view')
+        const canAudit = hasPermission('audit.view')
 
-      const daily = (dailyRows.data ?? []) as { status: string }[]
-      const presentCount = daily.filter((d) => d.status === 'Present' || d.status === 'Late').length
-      const lateCount = daily.filter((d) => d.status === 'Late').length
-      const absentCount = daily.filter((d) => d.status === 'Absent').length
-
-      setStats({
-        employees: emp.count ?? 0,
-        branches: br.count ?? 0,
-        departments: dep.count ?? 0,
-        designations: desg.count ?? 0,
-        users: us.count ?? 0,
-        activeDevices: dev.count ?? 0,
-        upcomingHolidays: hol.count ?? 0,
-        onLeaveToday: leaveToday.data?.length ?? 0,
-        pendingLeave: pendLeave.count ?? 0,
-        pendingCorrections: pendCorr.count ?? 0,
-        presentToday: hasPermission('attendance.view') ? presentCount : '—',
-        lateToday: hasPermission('attendance.view') ? lateCount : '—',
-        absentToday: hasPermission('attendance.view') ? absentCount : '—',
-      })
-
-      setOnLeaveList(
-        (leaveToday.data ?? []).map((r: any) => ({
-          id: r.id,
-          name: `${r.employees?.first_name ?? ''} ${r.employees?.last_name ?? ''}`.trim() || 'Employee',
-          type: r.leave_types?.name ?? 'Leave',
-          until: r.to_date,
-        }))
-      )
-      setUpcomingHolidays(
-        (holList.data ?? []).map((h: any) => ({ id: h.id, name: h.name, date: h.holiday_date }))
-      )
-
-      // Announcements feed (latest 5 published + read state for this user)
-      if (hasPermission('announcement.view')) {
-        const [{ data: ann }, { data: reads }] = await Promise.all([
+        const [
+          empTotal,
+          empActive,
+          candNew,
+          candPipeline,
+          pendLeave,
+          allLeave,
+          dailyRows,
+          empByDept,
+          auditRows,
+          recentLeaves,
+          pendingLeaveList,
+        ] = await Promise.all([
+          supabase.from('employees').select('*', { count: 'exact', head: true }),
+          supabase.from('employees').select('*', { count: 'exact', head: true }).eq('is_active', true),
+          canRecruitment
+            ? supabase
+                .from('candidates')
+                .select('*', { count: 'exact', head: true })
+                .gte('applied_at', thirtyDaysAgoIso)
+                .in('stage', PIPELINE_STAGES)
+            : Promise.resolve({ count: 0 }),
+          canRecruitment
+            ? supabase.from('candidates').select('*', { count: 'exact', head: true }).in('stage', PIPELINE_STAGES)
+            : Promise.resolve({ count: 0 }),
+          canLeave
+            ? supabase.from('leave_applications').select('*', { count: 'exact', head: true }).eq('status', 'Pending')
+            : Promise.resolve({ count: 0 }),
+          canLeave
+            ? supabase.from('leave_applications').select('*', { count: 'exact', head: true })
+            : Promise.resolve({ count: 0 }),
+          canAttendance
+            ? supabase
+                .from('attendance_daily')
+                .select('attendance_date, status')
+                .gte('attendance_date', rangeStart)
+                .lte('attendance_date', todayIso)
+            : Promise.resolve({ data: [] as { attendance_date: string; status: string }[] }),
           supabase
-            .from('announcements')
-            .select('id, title, category, priority, pinned, published_at')
-            .eq('status', 'PUBLISHED')
-            .order('pinned', { ascending: false })
-            .order('published_at', { ascending: false, nullsFirst: false })
-            .limit(5),
-          appUser?.id
-            ? supabase.from('announcement_reads').select('announcement_id').eq('user_id', appUser.id)
-            : Promise.resolve({ data: [] as { announcement_id: string }[] }),
+            .from('employees')
+            .select('department_id, departments ( code, name )')
+            .eq('is_active', true),
+          canAudit
+            ? supabase
+                .from('audit_logs')
+                .select('id, action, entity_type, user_email, created_at, users ( full_name )')
+                .order('created_at', { ascending: false })
+                .limit(8)
+            : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+          canLeave
+            ? supabase
+                .from('leave_applications')
+                .select('id, created_at, status, employees ( full_name )')
+                .order('created_at', { ascending: false })
+                .limit(8)
+            : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+          canLeave
+            ? supabase
+                .from('leave_applications')
+                .select(
+                  'id, start_date, total_days, employees ( full_name, departments ( code, name ) )'
+                )
+                .eq('status', 'Pending')
+                .gte('start_date', todayIso)
+                .order('start_date', { ascending: true })
+                .limit(6)
+            : Promise.resolve({ data: [] as Record<string, unknown>[] }),
         ])
-        const readSet = new Set((reads ?? []).map((r) => (r as { announcement_id: string }).announcement_id))
-        setAnnouncements(
-          (ann ?? []).map((a: any) => ({
-            id: a.id,
-            title: a.title,
-            category: a.category,
-            priority: a.priority,
-            pinned: a.pinned,
-            published_at: a.published_at,
-            unread: !readSet.has(a.id),
-          }))
+
+        setTotalEmployees(empTotal.count ?? 0)
+        setActiveEmployees(empActive.count ?? 0)
+        setNewCandidates(candNew.count ?? 0)
+        setPipelineCandidates(candPipeline.count ?? 0)
+        setPendingLeaves(pendLeave.count ?? 0)
+        setTotalLeaveRequests(allLeave.count ?? 0)
+
+        const daily = (dailyRows.data ?? []) as { attendance_date: string; status: string }[]
+        const byMonth = new Map<string, { status: string }[]>()
+        for (const key of monthKeys) byMonth.set(key, [])
+        for (const row of daily) {
+          const key = monthKey(row.attendance_date)
+          if (byMonth.has(key)) byMonth.get(key)!.push({ status: row.status })
+        }
+
+        const trend: MonthPoint[] = monthKeys.map((key) => ({
+          month: monthLabel(key),
+          rate: Math.round(attendanceRateFromRows(byMonth.get(key) ?? []) * 10) / 10,
+        }))
+        setAttendanceTrend(trend)
+
+        if (canAttendance && trend.length >= 2) {
+          const current = trend[trend.length - 1]?.rate ?? 0
+          const previous = trend[trend.length - 2]?.rate ?? 0
+          setAttendanceRate(current)
+          setAttendanceDelta(Math.round((current - previous) * 10) / 10)
+        } else if (canAttendance && trend.length === 1) {
+          setAttendanceRate(trend[0]?.rate ?? 0)
+          setAttendanceDelta(null)
+        }
+
+        const deptCounts = new Map<string, number>()
+        for (const row of empByDept.data ?? []) {
+          const dept = row.departments as { code?: string; name?: string } | { code?: string; name?: string }[] | null
+          const d = Array.isArray(dept) ? dept[0] : dept
+          const code = (d?.code ?? d?.name ?? 'Other').slice(0, 3).toUpperCase()
+          deptCounts.set(code, (deptCounts.get(code) ?? 0) + 1)
+        }
+        const deptPoints = [...deptCounts.entries()]
+          .map(([code, count]) => ({ code, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 6)
+        setDeptDistribution(deptPoints)
+
+        const activity: ActivityItem[] = []
+
+        if (canAudit) {
+          for (const row of auditRows.data ?? []) {
+            const users = row.users as { full_name?: string } | { full_name?: string }[] | null
+            const u = Array.isArray(users) ? users[0] : users
+            const name = u?.full_name ?? (row.user_email as string) ?? 'User'
+            activity.push({
+              id: `audit-${row.id}`,
+              name,
+              action: auditActionLabel(row.action as string, row.entity_type as string),
+              at: row.created_at as string,
+            })
+          }
+        }
+
+        if (canLeave) {
+          for (const row of recentLeaves.data ?? []) {
+            const emp = row.employees as { full_name?: string } | { full_name?: string }[] | null
+            const e = Array.isArray(emp) ? emp[0] : emp
+            const name = e?.full_name ?? 'Employee'
+            const status = (row.status as string)?.toLowerCase() ?? 'updated'
+            activity.push({
+              id: `leave-${row.id}`,
+              name,
+              action:
+                status === 'pending'
+                  ? 'submitted leave request'
+                  : `${status} leave request`,
+              at: row.created_at as string,
+            })
+          }
+        }
+
+        activity.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+        setRecentActivity(activity.slice(0, 5))
+
+        setUpcomingLeaves(
+          (pendingLeaveList.data ?? []).map((row: Record<string, unknown>) => {
+            const emp = row.employees as
+              | { full_name?: string; departments?: { code?: string; name?: string } | { code?: string; name?: string }[] | null }
+              | { full_name?: string; departments?: { code?: string; name?: string } | { code?: string; name?: string }[] | null }[]
+              | null
+            const e = Array.isArray(emp) ? emp[0] : emp
+            const deptRaw = e?.departments
+            const deptObj = Array.isArray(deptRaw) ? deptRaw[0] : deptRaw
+            const startDate = row.start_date as string
+            const days = Number(row.total_days) || 1
+            return {
+              id: row.id as string,
+              name: e?.full_name ?? 'Employee',
+              department: deptObj?.name ?? deptObj?.code ?? '—',
+              dateLabel: new Date(`${startDate}T12:00:00`).toLocaleDateString(undefined, {
+                month: 'short',
+                day: 'numeric',
+              }),
+              days,
+            }
+          })
         )
+      } finally {
+        setLoading(false)
       }
     }
-    void load().catch(() => {})
-  }, [todayIso, in30Iso, appUser?.id, hasPermission])
-
-  const loadLivePunches = async () => {
-    if (!hasPermission('attendance.view')) return
-    const { data } = await supabase
-      .from('attendance_punches')
-      .select('id, punch_at, source, employees ( full_name, employee_code )')
-      .gte('punch_at', `${todayIso}T00:00:00`)
-      .order('punch_at', { ascending: false })
-      .limit(12)
-    setLivePunches(
-      (data ?? []).map((r: Record<string, unknown>) => {
-        const emp = r.employees as { full_name?: string; employee_code?: string } | { full_name?: string; employee_code?: string }[] | null
-        const e = Array.isArray(emp) ? emp[0] : emp
-        return {
-          id: r.id as string,
-          name: e?.full_name ?? 'Employee',
-          code: e?.employee_code ?? '',
-          punch_at: r.punch_at as string,
-          source: r.source as string,
-        }
-      })
-    )
-  }
-
-  useEffect(() => {
-    if (!hasPermission('attendance.view')) return
-    void loadLivePunches()
-
-    const channel = supabase
-      .channel('dashboard-attendance-live')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'attendance_punches' },
-        () => {
-          void loadLivePunches()
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_daily', filter: `attendance_date=eq.${todayIso}` },
-        async () => {
-          const { data } = await supabase.from('attendance_daily').select('status').eq('attendance_date', todayIso)
-          const daily = (data ?? []) as { status: string }[]
-          setStats((s) => ({
-            ...s,
-            presentToday: daily.filter((d) => d.status === 'Present' || d.status === 'Late').length,
-            lateToday: daily.filter((d) => d.status === 'Late').length,
-            absentToday: daily.filter((d) => d.status === 'Absent').length,
-          }))
-        }
-      )
-      .subscribe()
-
-    return () => {
-      void supabase.removeChannel(channel)
-    }
+    void load()
   }, [todayIso, hasPermission])
 
-  const statTiles: Stat[] = [
-    { label: 'Employees', value: stats.employees, icon: Users, hint: 'Total in system', to: '/employees', perm: 'employee.view' },
-    { label: 'Departments', value: stats.departments, icon: Briefcase, hint: 'Configured', to: '/departments', perm: 'department.view' },
-    { label: 'Designations', value: stats.designations, icon: GraduationCap, hint: 'Job titles', to: '/designations', perm: 'designation.view' },
-    { label: 'Branches', value: stats.branches, icon: Building2, hint: 'Active locations', to: '/branches', perm: 'branch.view' },
-    { label: 'On leave today', value: stats.onLeaveToday, icon: CalendarDays, hint: 'Approved leave', to: '/leave', perm: 'leave.view' },
-    { label: 'Pending leave', value: stats.pendingLeave, icon: CalendarDays, hint: 'Awaiting decision', to: '/leave', perm: 'leave.approve' },
-    { label: 'Pending corrections', value: stats.pendingCorrections, icon: FileQuestion, hint: 'Attendance fixes', to: '/attendance/corrections', perm: 'attendance.view' },
-    { label: 'Present today', value: stats.presentToday, icon: Clock, hint: 'Checked in', to: '/attendance', perm: 'attendance.view' },
-    { label: 'Late today', value: stats.lateToday, icon: Clock, hint: 'After grace period', to: '/attendance', perm: 'attendance.view' },
-    { label: 'Absent today', value: stats.absentToday, icon: Clock, hint: 'No punch yet', to: '/attendance', perm: 'attendance.view' },
-    { label: 'Upcoming holidays', value: stats.upcomingHolidays, icon: CalendarRange, hint: 'Next 30 days', to: '/holidays', perm: 'holiday.view' },
-  ]
-
-  const visibleStats = statTiles.filter((s) => !s.perm || hasPermission(s.perm))
+  const attendanceSubtext =
+    attendanceDelta === null
+      ? 'Based on recent attendance'
+      : `${attendanceDelta >= 0 ? '+' : ''}${attendanceDelta}% from last month`
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-end justify-between flex-wrap gap-4">
+    <div className="space-y-6">
+      <AnimatedSection>
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Hello, {appUser?.full_name?.split(' ')[0] || 'there'}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {roles.join(' · ') || 'No roles assigned'}
-            {' · '}
-            {permissions.size} permissions
+          <h2 className="text-2xl font-bold tracking-tight">Dashboard</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Welcome back{appUser?.full_name ? `, ${appUser.full_name.split(' ')[0]}` : ''}! Here&apos;s what&apos;s
+            happening today.
           </p>
         </div>
-        <div className="text-right text-sm">
-          <div className="font-medium">
-            {new Date().toLocaleDateString(undefined, {
-              weekday: 'long',
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            {new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-          </div>
+      </AnimatedSection>
+
+      {/* KPI row */}
+      <AnimatedSection delay={60}>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          title="Total Employees"
+          value={loading ? '—' : totalEmployees}
+          subtext={`${loading ? '—' : activeEmployees} active`}
+          icon={Users}
+          iconBg="bg-blue-500/10"
+          iconColor="text-blue-600 dark:text-blue-400"
+          to={hasPermission('employee.view') ? '/employees' : undefined}
+        />
+        <KpiCard
+          title="New Candidates"
+          value={loading ? '—' : newCandidates}
+          subtext={`${loading ? '—' : pipelineCandidates} in pipeline`}
+          icon={UserPlus}
+          iconBg="bg-emerald-500/10"
+          iconColor="text-emerald-600 dark:text-emerald-400"
+          to={hasPermission('recruitment.view') ? '/recruitment/pipeline' : undefined}
+        />
+        <KpiCard
+          title="Attendance Rate"
+          value={loading || attendanceRate === null ? '—' : `${attendanceRate}%`}
+          subtext={hasPermission('attendance.view') ? attendanceSubtext : 'No access'}
+          subtextClass={
+            attendanceDelta !== null && attendanceDelta >= 0
+              ? 'text-emerald-600 dark:text-emerald-400'
+              : 'text-muted-foreground'
+          }
+          icon={Clock}
+          iconBg="bg-orange-500/10"
+          iconColor="text-orange-600 dark:text-orange-400"
+          to={hasPermission('attendance.view') ? '/attendance' : undefined}
+        />
+        <KpiCard
+          title="Pending Leaves"
+          value={loading ? '—' : pendingLeaves}
+          subtext={`${loading ? '—' : totalLeaveRequests} total requests`}
+          subtextClass="text-muted-foreground"
+          icon={TrendingUp}
+          iconBg="bg-slate-500/10"
+          iconColor="text-slate-600 dark:text-slate-400"
+          to={hasPermission('leave.view') ? '/leave' : undefined}
+        />
         </div>
-      </div>
+      </AnimatedSection>
 
-      {/* Stat tiles */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {visibleStats.map((s) => {
-          const card = (
-            <Card className={cn('transition-colors', s.to && 'hover:border-primary/40 hover:bg-accent/40')}>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                <CardTitle className="text-sm font-medium text-muted-foreground">{s.label}</CardTitle>
-                <s.icon className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-3xl font-semibold tabular-nums">{s.value}</div>
-                <p className="text-xs text-muted-foreground pt-1">{s.hint}</p>
-              </CardContent>
-            </Card>
-          )
-          return s.to ? (
-            <Link key={s.label} to={s.to}>
-              {card}
-            </Link>
-          ) : (
-            <div key={s.label}>{card}</div>
-          )
-        })}
-      </div>
-
-      {/* Live attendance feed */}
-      {hasPermission('attendance.view') && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Clock className="h-4 w-4 text-primary" /> Live punches today
-              </CardTitle>
-              <CardDescription>Updates automatically when devices or manual punches record attendance.</CardDescription>
-            </div>
-            <Link to="/attendance" className="text-xs text-primary hover:underline">
-              Open attendance →
-            </Link>
+      {/* Charts row */}
+      <AnimatedSection delay={120}>
+        <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base font-semibold">Attendance Analytics</CardTitle>
+            {hasPermission('attendance.view') && <ViewAllLink to="/attendance" />}
           </CardHeader>
-          <CardContent className="p-0">
-            {livePunches.length === 0 ? (
-              <div className="px-6 py-8 text-sm text-muted-foreground">No punches recorded yet today.</div>
-            ) : (
-              <div className="divide-y">
-                {livePunches.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between gap-3 px-6 py-3 text-sm">
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{p.name}</div>
-                      <div className="text-xs text-muted-foreground">{p.code}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="tabular-nums">
-                        {new Date(p.punch_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{p.source.replace('_', ' ')}</div>
-                    </div>
-                  </div>
-                ))}
+          <CardContent className="pt-2">
+            {!hasPermission('attendance.view') ? (
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+                You don&apos;t have permission to view attendance analytics.
               </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Announcements feed */}
-      {hasPermission('announcement.view') && announcements.length > 0 && (
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Megaphone className="h-4 w-4 text-primary" /> Announcements
-              </CardTitle>
-              <CardDescription>Latest company-wide updates.</CardDescription>
-            </div>
-            <Link to="/announcements" className="text-xs text-primary hover:underline">
-              View all →
-            </Link>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y">
-              {announcements.map((a) => (
-                <Link
-                  key={a.id}
-                  to={`/announcements/${a.id}`}
-                  className={cn(
-                    'flex items-center gap-3 px-6 py-3 hover:bg-muted/30',
-                    a.pinned && 'bg-amber-50/40 dark:bg-amber-950/10'
-                  )}
-                >
-                  <div className="flex flex-col items-center gap-0.5 min-w-[20px]">
-                    {a.pinned && <Pin className="h-3.5 w-3.5 text-amber-600" />}
-                    {a.priority === 'URGENT' && <AlertTriangle className="h-3.5 w-3.5 text-red-600" />}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-                        {a.category}
-                      </span>
-                      {a.unread && <span className="inline-flex h-1.5 w-1.5 rounded-full bg-primary" />}
-                    </div>
-                    <div className={cn('truncate text-sm', a.unread ? 'font-semibold' : 'font-medium')}>
-                      {a.title}
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {a.published_at ? new Date(a.published_at).toLocaleDateString() : '—'}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Today snapshot + system overview */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-primary" /> On leave today
-            </CardTitle>
-            <CardDescription>Approved leave currently in effect.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {onLeaveList.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No employees on leave today.</div>
+            ) : loading ? (
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">Loading…</div>
             ) : (
-              <ul className="space-y-2 text-sm">
-                {onLeaveList.map((l) => (
-                  <li key={l.id} className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{l.name}</div>
-                      <div className="text-xs text-muted-foreground">{l.type}</div>
-                    </div>
-                    <div className="text-xs text-muted-foreground">until {l.until}</div>
-                  </li>
-                ))}
-              </ul>
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={attendanceTrend} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} unit="%" />
+                  <Tooltip
+                    formatter={(value) => [`${value ?? 0}%`, 'Rate']}
+                    contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="rate"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ r: 4, fill: 'hsl(var(--primary))' }}
+                    activeDot={{ r: 5 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <CalendarRange className="h-4 w-4 text-primary" /> Upcoming holidays
-            </CardTitle>
-            <CardDescription>Next 30 days.</CardDescription>
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-base font-semibold">Department Distribution</CardTitle>
+            {hasPermission('department.view') && <ViewAllLink to="/departments" />}
           </CardHeader>
-          <CardContent>
-            {upcomingHolidays.length === 0 ? (
-              <div className="text-sm text-muted-foreground">No holidays in the next 30 days.</div>
+          <CardContent className="pt-2">
+            {loading ? (
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">Loading…</div>
+            ) : deptDistribution.length === 0 ? (
+              <div className="flex h-[260px] items-center justify-center text-sm text-muted-foreground">
+                No department data yet.
+              </div>
             ) : (
-              <ul className="space-y-2 text-sm">
-                {upcomingHolidays.map((h) => (
-                  <li key={h.id} className="flex items-center justify-between">
-                    <span className="font-medium">{h.name}</span>
-                    <span className="text-xs text-muted-foreground">{h.date}</span>
-                  </li>
-                ))}
-              </ul>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={deptDistribution} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/60" vertical={false} />
+                  <XAxis dataKey="code" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ borderRadius: 8, border: '1px solid hsl(var(--border))' }} />
+                  <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={48} />
+                </BarChart>
+              </ResponsiveContainer>
             )}
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <Shield className="h-4 w-4 text-primary" /> System overview
-            </CardTitle>
-            <CardDescription>What's running right now.</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Active devices</span>
-              <span className="font-medium tabular-nums">{stats.activeDevices}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">System users</span>
-              <span className="font-medium tabular-nums">{stats.users}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Your roles</span>
-              <span className="font-medium">{roles.join(', ') || '—'}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Your permissions</span>
-              <span className="font-medium tabular-nums">{permissions.size}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick actions */}
-      <div className="space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold tracking-tight">Quick actions</h3>
-          <p className="text-sm text-muted-foreground">
-            Jump straight to any module. Tiles are filtered by your permissions.
-          </p>
         </div>
+      </AnimatedSection>
 
-        {quickActions.map((section) => {
-          const items = section.items.filter((i) => !i.perm || hasPermission(i.perm))
-          if (items.length === 0) return null
-          return (
-            <div key={section.heading} className="space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {section.heading}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                {items.map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="group rounded-xl border bg-card p-4 hover:border-primary/40 hover:bg-accent/40 transition-colors"
+      {/* Activity row */}
+      <AnimatedSection delay={180}>
+        <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="text-base font-semibold">Recent Activity</CardTitle>
+            {hasPermission('audit.view') && <ViewAllLink to="/admin/audit" />}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {loading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : recentActivity.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No recent activity.</p>
+            ) : (
+              recentActivity.map((item) => (
+                <div key={item.id} className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                      avatarColorFor(item.name)
+                    )}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className={cn('h-10 w-10 rounded-lg grid place-items-center', toneClasses[item.tone])}>
-                        <item.icon className="h-5 w-5" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium leading-tight truncate group-hover:text-primary">
-                          {item.label}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">{item.description}</div>
-                      </div>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+                    {initialsFromName(item.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm">
+                      <span className="font-medium">{item.name}</span>{' '}
+                      <span className="text-muted-foreground">{item.action}</span>
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs text-muted-foreground">{formatRelativeLong(item.at)}</span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+            <CardTitle className="text-base font-semibold">Upcoming Leave Requests</CardTitle>
+            {hasPermission('leave.view') && <ViewAllLink to="/leave" />}
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!hasPermission('leave.view') ? (
+              <p className="text-sm text-muted-foreground">You don&apos;t have permission to view leave requests.</p>
+            ) : loading ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : upcomingLeaves.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No upcoming pending leave requests.</p>
+            ) : (
+              upcomingLeaves.map((item) => (
+                <div key={item.id} className="flex items-center gap-3">
+                  <div
+                    className={cn(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                      avatarColorFor(item.name)
+                    )}
+                  >
+                    {initialsFromName(item.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{item.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{item.department}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-sm text-muted-foreground">{item.dateLabel}</span>
+                    <span
+                      className={cn(
+                        'rounded-full px-2.5 py-0.5 text-xs font-medium',
+                        item.days <= 1
+                          ? 'bg-orange-500/10 text-orange-700 dark:text-orange-400'
+                          : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                      )}
+                    >
+                      {item.days} day{item.days === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        </div>
+      </AnimatedSection>
     </div>
   )
 }
